@@ -1,3 +1,4 @@
+pub mod config;
 pub mod frontmatter;
 
 pub fn version() -> &'static str {
