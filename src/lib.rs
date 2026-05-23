@@ -1,4 +1,5 @@
 pub mod config;
+pub mod dispatch;
 pub mod env_setup;
 pub mod frontmatter;
 pub mod identity;
