@@ -8,6 +8,7 @@ pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String
     let prog = &ctx.identity.name;
     let root = ctx.identity.root.to_string_lossy();
     let root_var = identity::env_var_name(prog);
+    let config = ctx.identity.config_path.to_string_lossy();
 
     let mut out = String::new();
     out.push_str(&format!("export {root_var}=\"{root}\"\n"));
@@ -37,9 +38,9 @@ pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String
          \x20 if [ \"$#\" -gt 0 ]; then shift; fi\n\
          \x20 case \"$command\" in\n\
          \x20 {cases})\n\
-         \x20   evaluate=`{prog} \"sh-$command\" \"$@\"` && eval \"${{evaluate}}\" ;;\n\
+         \x20   evaluate=`zub -C \"{config}\" \"sh-$command\" \"$@\"` && eval \"${{evaluate}}\" ;;\n\
          \x20 *)\n\
-         \x20   command {prog} \"$command\" \"$@\";;\n\
+         \x20   zub -C \"{config}\" \"$command\" \"$@\";;\n\
          \x20 esac\n\
          }}\n"
     ));
@@ -160,5 +161,17 @@ mod tests {
         };
         let script = render_init(&ctx, "bash", &["cd".to_string(), "push".to_string()]);
         assert!(script.contains("cd|push)"));
+    }
+
+    #[test]
+    fn wrapper_invokes_zub_with_config() {
+        let (id, cfg, cmds) = ctx();
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
+        let script = render_init(&ctx, "bash", &["cd".to_string()]);
+        assert!(script.contains("zub -C \"/opt/rush/zub.yml\""));
     }
 }
