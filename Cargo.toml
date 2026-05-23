@@ -1,0 +1,19 @@
+[package]
+name = "sub"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sub"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sub"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"
