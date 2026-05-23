@@ -150,7 +150,10 @@ mod tests {
     fn local_root_detected_when_dot_sub_libexec_exists() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join(".sub").join("libexec")).unwrap();
-        assert_eq!(local_root_in(dir.path(), "sub"), Some(dir.path().join(".sub")));
+        assert_eq!(
+            local_root_in(dir.path(), "sub"),
+            Some(dir.path().join(".sub"))
+        );
     }
 
     #[test]
