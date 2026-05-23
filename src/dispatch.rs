@@ -2,8 +2,15 @@ use crate::index::CommandInfo;
 use std::path::PathBuf;
 
 /// The set of command names owned by the binary.
-pub const BUILTINS: [&str; 7] =
-    ["commands", "help", "completions", "init", "new", "source", "scaffold"];
+pub const BUILTINS: [&str; 7] = [
+    "commands",
+    "help",
+    "completions",
+    "init",
+    "new",
+    "source",
+    "scaffold",
+];
 
 #[derive(Debug, PartialEq)]
 pub enum Resolution {
@@ -49,7 +56,10 @@ mod tests {
         CommandInfo {
             name: name.to_string(),
             path: PathBuf::from(format!("/libexec/rush-{name}")),
-            front: FrontMatter { overrides, ..Default::default() },
+            front: FrontMatter {
+                overrides,
+                ..Default::default()
+            },
             is_local: false,
         }
     }
@@ -57,7 +67,10 @@ mod tests {
     #[test]
     fn external_command_resolves_to_its_path() {
         let cmds = vec![cmd("who", false)];
-        assert_eq!(resolve("who", &cmds), Resolution::External(PathBuf::from("/libexec/rush-who")));
+        assert_eq!(
+            resolve("who", &cmds),
+            Resolution::External(PathBuf::from("/libexec/rush-who"))
+        );
     }
 
     #[test]
@@ -67,18 +80,27 @@ mod tests {
 
     #[test]
     fn reserved_name_resolves_to_builtin() {
-        assert_eq!(resolve("help", &[]), Resolution::Builtin("help".to_string()));
+        assert_eq!(
+            resolve("help", &[]),
+            Resolution::Builtin("help".to_string())
+        );
     }
 
     #[test]
     fn reserved_name_not_overridden_without_flag() {
         let cmds = vec![cmd("help", false)];
-        assert_eq!(resolve("help", &cmds), Resolution::Builtin("help".to_string()));
+        assert_eq!(
+            resolve("help", &cmds),
+            Resolution::Builtin("help".to_string())
+        );
     }
 
     #[test]
     fn reserved_name_overridden_with_flag() {
         let cmds = vec![cmd("help", true)];
-        assert_eq!(resolve("help", &cmds), Resolution::External(PathBuf::from("/libexec/rush-help")));
+        assert_eq!(
+            resolve("help", &cmds),
+            Resolution::External(PathBuf::from("/libexec/rush-help"))
+        );
     }
 }

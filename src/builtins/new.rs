@@ -10,7 +10,11 @@ pub struct Options {
 }
 
 pub fn parse_flags(args: &[String]) -> Options {
-    let mut opts = Options { local: false, sh: false, command: None };
+    let mut opts = Options {
+        local: false,
+        sh: false,
+        command: None,
+    };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {

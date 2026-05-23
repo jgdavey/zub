@@ -32,12 +32,7 @@ pub fn discover(id: &Identity) -> Vec<CommandInfo> {
     found.into_values().collect()
 }
 
-fn scan_dir(
-    dir: &Path,
-    prefix: &str,
-    is_local: bool,
-    found: &mut BTreeMap<String, CommandInfo>,
-) {
+fn scan_dir(dir: &Path, prefix: &str, is_local: bool, found: &mut BTreeMap<String, CommandInfo>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -55,7 +50,12 @@ fn scan_dir(
         let front = frontmatter::parse_file(&path).unwrap_or_default();
         found.insert(
             command.to_string(),
-            CommandInfo { name: command.to_string(), path, front, is_local },
+            CommandInfo {
+                name: command.to_string(),
+                path,
+                front,
+                is_local,
+            },
         );
     }
 }
@@ -94,7 +94,11 @@ mod tests {
         let root = tempdir().unwrap();
         write_cmd(root.path(), "notmine", "#!/bin/sh\n");
         write_cmd(root.path(), "rush-yes", "#!/bin/sh\n");
-        let id = Identity { name: "rush".into(), root: root.path().to_path_buf(), local_root: None };
+        let id = Identity {
+            name: "rush".into(),
+            root: root.path().to_path_buf(),
+            local_root: None,
+        };
         let cmds = discover(&id);
         assert_eq!(cmds.len(), 1);
         assert_eq!(cmds[0].name, "yes");

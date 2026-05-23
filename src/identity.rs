@@ -11,7 +11,13 @@ pub fn name_from_argv0(argv0: &str) -> String {
 
 fn shout(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -134,7 +140,10 @@ mod tests {
         fs::write(&bin, "").unwrap();
         std::env::remove_var("_WALKER_ROOT");
         let root = resolve_root("walker", &bin).unwrap();
-        assert_eq!(root.canonicalize().unwrap(), dir.path().canonicalize().unwrap());
+        assert_eq!(
+            root.canonicalize().unwrap(),
+            dir.path().canonicalize().unwrap()
+        );
     }
 
     #[test]

@@ -25,7 +25,11 @@ pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String
         _ => {}
     }
 
-    let cases = sh_commands.join("|");
+    let cases = if sh_commands.is_empty() {
+        String::from("NO_SH_COMMANDS")
+    } else {
+        sh_commands.join("|")
+    };
     out.push_str(&format!(
         "_{prog}_wrapper() {{\n\
          \x20 local command=\"$1\"\n\
@@ -56,9 +60,14 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     let shell = iter
         .next()
         .cloned()
-        .or_else(|| std::env::var("SHELL").ok().map(|s| {
-            std::path::Path::new(&s).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or(s)
-        }))
+        .or_else(|| {
+            std::env::var("SHELL").ok().map(|s| {
+                std::path::Path::new(&s)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or(s)
+            })
+        })
         .unwrap_or_default();
 
     if !print {
@@ -70,7 +79,10 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         eprintln!("# Load {prog} automatically by adding");
         eprintln!("# the following to {profile}:");
         eprintln!();
-        eprintln!("eval \"$({}/bin/{prog} init -)\"", ctx.identity.root.to_string_lossy());
+        eprintln!(
+            "eval \"$({}/bin/{prog} init -)\"",
+            ctx.identity.root.to_string_lossy()
+        );
         eprintln!();
         return 1;
     }
@@ -90,14 +102,22 @@ mod tests {
     use std::path::PathBuf;
 
     fn ctx() -> (Identity, Option<Config>, Vec<CommandInfo>) {
-        let id = Identity { name: "rush".into(), root: PathBuf::from("/opt/rush"), local_root: None };
+        let id = Identity {
+            name: "rush".into(),
+            root: PathBuf::from("/opt/rush"),
+            local_root: None,
+        };
         (id, None, Vec::new())
     }
 
     #[test]
     fn exports_root_and_path() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let script = render_init(&ctx, "bash", &[]);
         assert!(script.contains("export _RUSH_ROOT=\"/opt/rush\""));
         assert!(script.contains("export PATH=\"${PATH}:/opt/rush/bin\""));
@@ -106,7 +126,11 @@ mod tests {
     #[test]
     fn bash_emits_completion_source_and_alias() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let script = render_init(&ctx, "bash", &[]);
         assert!(script.contains("/opt/rush/completions/rush.bash"));
         assert!(script.contains("alias rush=_rush_wrapper"));
@@ -115,7 +139,11 @@ mod tests {
     #[test]
     fn zsh_emits_fpath_and_function() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let script = render_init(&ctx, "zsh", &[]);
         assert!(script.contains("fpath=($fpath /opt/rush/completions)"));
         assert!(script.contains("rush() { _rush_wrapper $@ }"));
@@ -124,7 +152,11 @@ mod tests {
     #[test]
     fn sh_wrapper_lists_sh_commands() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let script = render_init(&ctx, "bash", &["cd".to_string(), "push".to_string()]);
         assert!(script.contains("cd|push)"));
     }

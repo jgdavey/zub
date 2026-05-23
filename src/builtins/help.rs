@@ -1,5 +1,5 @@
-use crate::builtins::{all_command_names, BUILTIN_DOCS};
 use crate::builtins::Context;
+use crate::builtins::{all_command_names, BUILTIN_DOCS};
 use std::env;
 
 struct Doc {
@@ -50,7 +50,11 @@ pub fn render_table(ctx: &Context, columns: usize) -> String {
     for name in all_command_names(ctx) {
         if let Some(doc) = doc_for(&name, ctx) {
             if let Some(summary) = doc.summary {
-                let summary = if doc.is_local { format!("(local) {summary}") } else { summary };
+                let summary = if doc.is_local {
+                    format!("(local) {summary}")
+                } else {
+                    summary
+                };
                 longest = longest.max(name.len());
                 rows.push((name, summary));
             }
@@ -67,7 +71,9 @@ pub fn render_table(ctx: &Context, columns: usize) -> String {
             truncate(&summary, summary_width)
         ));
     }
-    out.push_str(&format!("\nSee '{prog} help <command>' for more information on a specific command.\n"));
+    out.push_str(&format!(
+        "\nSee '{prog} help <command>' for more information on a specific command.\n"
+    ));
     out
 }
 
@@ -91,7 +97,10 @@ pub fn render_detail(name: &str, ctx: &Context) -> Option<String> {
 }
 
 fn terminal_columns() -> usize {
-    env::var("COLUMNS").ok().and_then(|c| c.parse().ok()).unwrap_or(80)
+    env::var("COLUMNS")
+        .ok()
+        .and_then(|c| c.parse().ok())
+        .unwrap_or(80)
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
@@ -131,7 +140,11 @@ mod tests {
     use std::path::PathBuf;
 
     fn ctx() -> (Identity, Option<Config>, Vec<CommandInfo>) {
-        let id = Identity { name: "rush".into(), root: PathBuf::from("/r"), local_root: None };
+        let id = Identity {
+            name: "rush".into(),
+            root: PathBuf::from("/r"),
+            local_root: None,
+        };
         let cmds = vec![CommandInfo {
             name: "who".into(),
             path: PathBuf::from("/r/libexec/rush-who"),
@@ -149,7 +162,11 @@ mod tests {
     #[test]
     fn table_lists_commands_with_summaries() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let table = render_table(&ctx, 80);
         assert!(table.contains("rush <command>"));
         assert!(table.contains("who"));
@@ -159,7 +176,11 @@ mod tests {
     #[test]
     fn detail_renders_usage_summary_help() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let detail = render_detail("who", &ctx).unwrap();
         assert!(detail.contains("Usage: rush who"));
         assert!(detail.contains("Summary: Check who's logged in"));
@@ -169,7 +190,11 @@ mod tests {
     #[test]
     fn detail_for_builtin_uses_registry() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let detail = render_detail("commands", &ctx).unwrap();
         assert!(detail.contains("List all commands"));
     }
@@ -177,7 +202,11 @@ mod tests {
     #[test]
     fn detail_for_unknown_is_none() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         assert!(render_detail("nope", &ctx).is_none());
     }
 

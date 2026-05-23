@@ -45,20 +45,31 @@ mod tests {
     use std::path::PathBuf;
 
     fn ctx_with(names: &[&str]) -> (Identity, Option<Config>, Vec<CommandInfo>) {
-        let id = Identity { name: "rush".into(), root: PathBuf::from("/r"), local_root: None };
-        let cmds = names.iter().map(|n| CommandInfo {
-            name: n.to_string(),
-            path: PathBuf::from(format!("/r/libexec/rush-{n}")),
-            front: FrontMatter::default(),
-            is_local: false,
-        }).collect();
+        let id = Identity {
+            name: "rush".into(),
+            root: PathBuf::from("/r"),
+            local_root: None,
+        };
+        let cmds = names
+            .iter()
+            .map(|n| CommandInfo {
+                name: n.to_string(),
+                path: PathBuf::from(format!("/r/libexec/rush-{n}")),
+                front: FrontMatter::default(),
+                is_local: false,
+            })
+            .collect();
         (id, None, cmds)
     }
 
     #[test]
     fn lists_builtins_and_externals_sorted() {
         let (id, cfg, cmds) = ctx_with(&["who"]);
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let out = collect(&[], &ctx);
         assert!(out.contains(&"who".to_string()));
         assert!(out.contains(&"help".to_string()));
@@ -70,7 +81,11 @@ mod tests {
     #[test]
     fn sh_filter_strips_prefix() {
         let (id, cfg, cmds) = ctx_with(&["sh-cd", "who"]);
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let out = collect(&["--sh".to_string()], &ctx);
         assert_eq!(out, vec!["cd".to_string()]);
     }
@@ -78,7 +93,11 @@ mod tests {
     #[test]
     fn no_sh_filter_excludes_sh_commands() {
         let (id, cfg, cmds) = ctx_with(&["sh-cd", "who"]);
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let out = collect(&["--no-sh".to_string()], &ctx);
         assert!(out.contains(&"who".to_string()));
         assert!(!out.contains(&"cd".to_string()));

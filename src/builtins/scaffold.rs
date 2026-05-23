@@ -63,14 +63,22 @@ mod tests {
     use tempfile::tempdir;
 
     fn ctx() -> (Identity, Option<Config>, Vec<CommandInfo>) {
-        let id = Identity { name: "sub".into(), root: PathBuf::from("/opt/sub"), local_root: None };
+        let id = Identity {
+            name: "sub".into(),
+            root: PathBuf::from("/opt/sub"),
+            local_root: None,
+        };
         (id, None, Vec::new())
     }
 
     #[test]
     fn creates_program_tree() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let work = tempdir().unwrap();
         let target = work.path().join("rush");
         let binary = Path::new("/usr/local/bin/sub");
@@ -90,7 +98,11 @@ mod tests {
     #[test]
     fn refuses_existing_directory() {
         let (id, cfg, cmds) = ctx();
-        let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            commands: &cmds,
+        };
         let work = tempdir().unwrap();
         let target = work.path().join("taken");
         std::fs::create_dir(&target).unwrap();

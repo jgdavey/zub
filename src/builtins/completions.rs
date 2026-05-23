@@ -27,7 +27,11 @@ pub fn comp_words(args: &[String], comp_word: Option<String>) -> CompWords {
     } else {
         None
     };
-    CompWords { words, last, penult }
+    CompWords {
+        words,
+        last,
+        penult,
+    }
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
@@ -36,14 +40,20 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     }
 
     let Some(command) = args.first() else {
-        eprintln!("usage: {} completions command [arg1 arg2...]", ctx.identity.name);
+        eprintln!(
+            "usage: {} completions command [arg1 arg2...]",
+            ctx.identity.name
+        );
         return 1;
     };
     let rest = &args[1..];
 
     // Built-in completion runs in-process.
     if BUILTINS.contains(&command.as_str())
-        && !ctx.commands.iter().any(|c| &c.name == command && c.front.overrides)
+        && !ctx
+            .commands
+            .iter()
+            .any(|c| &c.name == command && c.front.overrides)
     {
         let mut a = vec!["--complete".to_string()];
         a.extend_from_slice(rest);
@@ -106,7 +116,10 @@ mod tests {
 
     #[test]
     fn uses_words_as_is_when_comp_word_set() {
-        let cw = comp_words(&["sub".to_string(), "fo".to_string()], Some("fo".to_string()));
+        let cw = comp_words(
+            &["sub".to_string(), "fo".to_string()],
+            Some("fo".to_string()),
+        );
         assert_eq!(cw.words, vec!["sub".to_string(), "fo".to_string()]);
         assert_eq!(cw.last, "fo");
         assert_eq!(cw.penult.as_deref(), Some("sub"));
