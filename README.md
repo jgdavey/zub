@@ -15,10 +15,22 @@ Here's some quick examples:
 Each subcommand maps to a separate, standalone executable program. Sub programs are laid out like so:
 
     .
+    ├── sub.yml           # declares your program's name (and optional metadata)
     ├── bin               # contains the main executable for your program
     ├── completions       # (optional) bash/zsh completions
     ├── libexec           # where the subcommand executables are
     └── share             # static data storage
+
+The `sub.yml` at the root names your program. The core is a single compiled
+binary that learns its identity from this file (and from the name it's invoked
+as), so there's no build step or source-templating involved in making a sub:
+
+``` yaml
+name: rush
+# optional:
+version: 0.1.0
+description: A delicious way to organize programs
+```
 
 ## Subcommands
 
@@ -53,7 +65,13 @@ You get a few commands that come with your sub:
 * `completions`: Helps kick off subcommand autocompletion.
 * `help`: Document how to use each subcommand.
 * `init`: Shows how to load your sub with autocompletions, based on your shell.
-* `shell`: Helps with calling subcommands that might be named the same as builtin/executables.
+* `new`: Generates a new subcommand script (pre-filled with front-matter).
+* `source`: Prints the source of a subcommand.
+* `scaffold`: Creates a brand new sub program (see "Make your own sub" below).
+
+These are built into the binary. If you ever need to replace one with your own
+script, name a `libexec` command after it and add `override: true` to that
+script's front-matter (see below) — otherwise the built-in always wins.
 
 If you ever need to reference files inside of your sub's installation, say to access a file in the `share` directory, your sub exposes the directory path in the environment, based on your sub name. For a sub named `rush`, the variable name will be `_RUSH_ROOT`.
 
@@ -72,25 +90,38 @@ You can also use this environment variable to call other commands inside of your
 
 Each subcommand can opt into self-documentation, which allows the subcommand to provide information when `sub` and `sub help [SUBCOMMAND]` is run.
 
-This is all done by adding a few magic comments. Here's an example from `rush who` (also see `sub commands` for another example):
+This is done with a small block of *front-matter* at the top of the script: a
+run of contiguous lines that begin with your comment character followed by `@`
+(`#@` for shell/Ruby/Python, `//@` for JavaScript, `;@` for Lisp, `--@` for
+SQL/Lua). The text after the sigil is plain [YAML](https://yaml.org/). The
+parser reads the block, stops at the first non-sigil line, and never touches the
+rest of your script — so it stays fast no matter how big your command is.
+
+Here's an example from `rush who`:
 
 ``` bash
 #!/usr/bin/env bash
-# Usage: sub who
-# Summary: Check who's logged in
-# Help: This will print out when you run `sub help who`.
-# You can have multiple lines even!
-#
-#    Show off an example indented
-#
-# And maybe start off another one?
+#@ usage: sub who
+#@ summary: Check who's logged in
+#@ help: |
+#@   This will print out when you run `sub help who`.
+#@   You can have multiple lines even!
+#@
+#@      Show off an example indented
+#@
+#@   And maybe start off another one?
 
 set -e
 
 who
 ```
 
-Now, when you run `sub`, the "Summary" magic comment will now show up:
+The recognized keys are `summary`, `usage`, `help`, `complete`, and `override`
+(unknown keys are ignored, so the format can grow without breaking older
+scripts). Because the body is real YAML, multi-line help uses a `|` block scalar
+and indentation is preserved.
+
+Now, when you run `sub`, the "summary" will show up:
 
     usage: sub <command> [<args>]
 
@@ -98,7 +129,7 @@ Now, when you run `sub`, the "Summary" magic comment will now show up:
        commands               List all sub commands
        who                    Check who's logged in
 
-And running `sub help who` will show the "Usage" magic comment, and then the "Help" comment block:
+And running `sub help who` will show the "usage" line, and then the "help" block:
 
     Usage: sub who
 
@@ -118,18 +149,16 @@ Your sub loves autocompletion. It's the mustard, mayo, or whatever topping you'd
 1. Automatic autocompletion to find subcommands (What can this sub do?)
 2. Opt-in autocompletion of potential arguments for your subcommands (What can this subcommand do?)
 
-Opting into autocompletion of subcommands requires that you add a magic comment of (make sure to replace with your sub's name!):
-
-    # Provide YOUR_SUB_NAME completions
-
-and then your script must support parsing of a flag: `--complete`. Here's an example from rbenv, namely `rbenv whence`:
+Opting into argument autocompletion takes two things: declare `complete: true`
+in your script's front-matter, and have the script handle a `--complete` flag.
+Here's an example modeled on rbenv's `whence`:
 
 ``` bash
 #!/usr/bin/env bash
+#@ summary: List something completable
+#@ complete: true
 set -e
-[ -n "$RBENV_DEBUG" ] && set -x
 
-# Provide rbenv completions
 if [ "$1" = "--complete" ]; then
   echo --path
   exec rbenv shims --short
@@ -137,6 +166,10 @@ fi
 
 # lots more bash...
 ```
+
+The `complete: true` key lets the core know the script participates in
+completion without scanning its body — commands that don't declare it simply
+fall back to your shell's default (filename) completion.
 
 Passing the `--complete` flag to this subcommand short circuits the real command, and then runs another subcommand instead. The output from your subcommand's `--complete` run is sent to your shell's autocompletion handler for you, and you don't ever have to once worry about how any of that works!
 
@@ -153,15 +186,17 @@ Let's say we want to shorten up our `rush who` to `rush w`. Just make a symlink!
 
 Now, `rush w` should run `libexec/rush-who`, and save you mere milliseconds of typing every day!
 
-## Prepare your sub
+## Make your own sub
 
-Clone this repo:
+Use the `scaffold` command to generate a fresh program tree:
 
-    git clone git@github.com:qrush/sub.git [name of your sub]
-    cd [name of your sub]
-    ./prepare.sh [name of your sub]
+    sub scaffold rush
 
-The prepare script will run you through the steps for making your own sub. Also, don't call it `sub`, by the way! Give it a better name.
+This creates a `rush/` directory containing a `sub.yml` (with `name: rush`), a
+`bin/rush` entry pointing at the binary, and empty `libexec`, `completions`, and
+`share` directories. There's no source-templating or build step — your program's
+identity comes entirely from `sub.yml` and the name it's invoked as. (Don't call
+it `sub`, by the way! Give it a better name.)
 
 ## Install your sub
 
