@@ -1,28 +1,38 @@
 use crate::builtins::Context;
+use crate::config::Config;
 use std::fs;
 use std::io;
-use std::os::unix::fs::symlink;
 use std::path::Path;
 
-/// Create a new sub program tree at `target`: `zub.yml`, `bin/<name>` symlinked
+/// Create a new sub program tree at `target`: `sub.yml`, `bin/<name>` symlinked
 /// to `binary`, and empty `libexec`/`completions`/`share` directories.
-pub fn create_program(_ctx: &Context, target: &Path, name: &str, binary: &Path) -> io::Result<()> {
+pub fn create_program(_ctx: &Context, target: &Path, name: &str) -> io::Result<()> {
     if target.exists() {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             format!("{} already exists", target.display()),
         ));
     }
-    fs::create_dir_all(target.join("bin"))?;
     fs::create_dir_all(target.join("libexec"))?;
     fs::create_dir_all(target.join("completions"))?;
     fs::create_dir_all(target.join("share"))?;
 
-    fs::write(
-        target.join("zub.yml"),
-        format!("name: {name}\nversion: 0.1.0\n"),
-    )?;
-    symlink(binary, target.join("bin").join(name))?;
+    // Okay to panic because previous lines would have failed
+    let root = target.to_str().unwrap();
+
+    let config = Config {
+        name: String::from(name),
+        root: Some(String::from(root)),
+        description: Some(String::from("your description")),
+        version: None,
+    };
+
+    // Create or open a file for writing
+    let config_file = fs::File::create(target.join("zub.yml"))?;
+    let writer = io::BufWriter::new(config_file);
+
+    serde_yaml::to_writer(writer, &config)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
     Ok(())
 }
 
@@ -31,16 +41,9 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         eprintln!("usage: {} scaffold <program>", ctx.identity.name);
         return 1;
     };
-    let binary = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("{}: cannot locate binary: {e}", ctx.identity.name);
-            return 1;
-        }
-    };
     let target = std::env::current_dir().unwrap_or_default().join(name);
 
-    match create_program(ctx, &target, name, &binary) {
+    match create_program(ctx, &target, name) {
         Ok(()) => {
             println!("Created {} at {}", name, target.display());
             println!("Next: cd {name} && ./bin/{name} init", name = name);
@@ -59,7 +62,7 @@ mod tests {
     use crate::config::Config;
     use crate::identity::Identity;
     use crate::index::CommandInfo;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use tempfile::tempdir;
 
     fn ctx() -> (Identity, Option<Config>, Vec<CommandInfo>) {
@@ -81,9 +84,8 @@ mod tests {
         };
         let work = tempdir().unwrap();
         let target = work.path().join("rush");
-        let binary = Path::new("/usr/local/bin/sub");
 
-        create_program(&ctx, &target, "rush", binary).unwrap();
+        create_program(&ctx, &target, "rush").unwrap();
 
         assert!(target.join("zub.yml").exists());
         assert!(target.join("libexec").is_dir());
@@ -91,8 +93,6 @@ mod tests {
         assert!(target.join("share").is_dir());
         let cfg = std::fs::read_to_string(target.join("zub.yml")).unwrap();
         assert!(cfg.contains("name: rush"));
-        let link = std::fs::read_link(target.join("bin").join("rush")).unwrap();
-        assert_eq!(link, binary);
     }
 
     #[test]
@@ -106,6 +106,6 @@ mod tests {
         let work = tempdir().unwrap();
         let target = work.path().join("taken");
         std::fs::create_dir(&target).unwrap();
-        assert!(create_program(&ctx, &target, "taken", Path::new("/bin/sub")).is_err());
+        assert!(create_program(&ctx, &target, "taken").is_err());
     }
 }

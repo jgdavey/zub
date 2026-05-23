@@ -1,26 +1,25 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 
 use std::fs;
 use std::path::Path;
 
-/// Load `zub.yml` (or `sub.yaml`) from `root`. Returns `None` when neither
-/// exists or the file cannot be parsed.
-pub fn load(root: &Path) -> Option<Config> {
-    for filename in ["sub.yml", "sub.yaml"] {
-        let path = root.join(filename);
-        if let Ok(contents) = fs::read_to_string(&path) {
-            if let Ok(cfg) = serde_yaml::from_str::<Config>(&contents) {
-                return Some(cfg);
-            }
+/// Load a config from an explicit file path. Returns `None` when the file is
+/// missing or cannot be parsed.
+pub fn load(path: &Path) -> Option<Config> {
+    if let Ok(contents) = fs::read_to_string(path) {
+        if let Ok(cfg) = serde_yaml::from_str::<Config>(&contents) {
+            return Some(cfg);
         }
     }
     None
@@ -33,31 +32,51 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn loads_sub_yml() {
+    fn loads_config_with_optional_root() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("sub.yml"), "name: rush\nversion: 0.2.0\n").unwrap();
-        let cfg = load(dir.path()).unwrap();
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: rush\nroot: /opt/rush\nversion: 0.2.0\n").unwrap();
+        let cfg = load(&path).unwrap();
         assert_eq!(cfg.name, "rush");
+        assert_eq!(cfg.root.as_deref(), Some("/opt/rush"));
         assert_eq!(cfg.version.as_deref(), Some("0.2.0"));
     }
 
     #[test]
-    fn accepts_yaml_extension() {
+    fn loads_config_without_root() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("sub.yaml"), "name: tool\n").unwrap();
-        assert_eq!(load(dir.path()).unwrap().name, "tool");
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: tool\n").unwrap();
+        let cfg = load(&path).unwrap();
+        assert_eq!(cfg.name, "tool");
+        assert_eq!(cfg.root, None);
     }
 
     #[test]
     fn ignores_unknown_keys() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("sub.yml"), "name: rush\nfuture_key: 1\n").unwrap();
-        assert_eq!(load(dir.path()).unwrap().name, "rush");
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: rush\nfuture_key: 1\n").unwrap();
+        assert_eq!(load(&path).unwrap().name, "rush");
     }
 
     #[test]
     fn missing_config_returns_none() {
         let dir = tempdir().unwrap();
-        assert!(load(dir.path()).is_none());
+        assert!(load(&dir.path().join("nope.yml")).is_none());
+    }
+
+    #[test]
+    fn omits_none_fields_when_serialized() {
+        let cfg = Config {
+            name: "rush".into(),
+            root: None,
+            version: None,
+            description: None,
+        };
+        let yaml = serde_yaml::to_string(&cfg).unwrap();
+        assert!(yaml.contains("name: rush"));
+        assert!(!yaml.contains("root"));
+        assert!(!yaml.contains("version"));
     }
 }
