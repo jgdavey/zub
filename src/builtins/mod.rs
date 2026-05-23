@@ -5,6 +5,7 @@ use crate::index::CommandInfo;
 pub mod commands;
 pub mod completions;
 pub mod help;
+pub mod new;
 pub mod source;
 
 /// Documentation for a built-in command, used by `help` and `commands`.
@@ -38,6 +39,7 @@ pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
         "commands" => commands::run(args, ctx),
         "completions" => completions::run(args, ctx),
         "help" => help::run(args, ctx),
+        "new" => new::run(args, ctx),
         "source" => source::run(args, ctx),
         _ => {
             eprintln!("{}: built-in `{name}' not implemented yet", ctx.identity.name);
