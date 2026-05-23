@@ -11,12 +11,12 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
         let is_sh = name.starts_with("sh-");
         match mode {
             Some("--sh") if is_sh => {
-                out.insert(name.trim_start_matches("sh-").to_string());
+                out.insert(name.strip_prefix("sh-").unwrap_or(&name).to_string());
             }
             Some("--sh") => {}
             Some("--no-sh") if is_sh => {}
             _ => {
-                out.insert(name.trim_start_matches("sh-").to_string());
+                out.insert(name.strip_prefix("sh-").unwrap_or(&name).to_string());
             }
         }
     }

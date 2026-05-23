@@ -63,3 +63,20 @@ pub fn all_command_names(ctx: &Context) -> Vec<String> {
     }
     set.into_iter().collect()
 }
+
+#[cfg(test)]
+mod consistency_tests {
+    use super::BUILTIN_DOCS;
+    use crate::dispatch::BUILTINS;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn builtins_and_docs_cover_the_same_names() {
+        let dispatched: BTreeSet<&str> = BUILTINS.iter().copied().collect();
+        let documented: BTreeSet<&str> = BUILTIN_DOCS.iter().map(|d| d.name).collect();
+        assert_eq!(
+            dispatched, documented,
+            "BUILTINS (dispatch.rs) and BUILTIN_DOCS (builtins/mod.rs) must list the same command names"
+        );
+    }
+}

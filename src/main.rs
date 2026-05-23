@@ -46,7 +46,7 @@ fn main() {
 
     match dispatch::resolve(&command, &commands) {
         Resolution::Builtin(name) => exit(builtins::run(&name, &cmd_args, &ctx)),
-        Resolution::External(path) => dispatch::exec_external(&path, &cmd_args),
+        Resolution::External(path) => dispatch::exec_external(&identity.name, &path, &cmd_args),
         Resolution::NotFound => {
             eprintln!("{}: no such command `{}'", identity.name, command);
             exit(1);

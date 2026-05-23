@@ -33,8 +33,9 @@ fn doc_for(name: &str, ctx: &Context) -> Option<Doc> {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max && max > 3 {
-        format!("{}...", &s[..max - 3])
+    if s.chars().count() > max && max > 3 {
+        let kept: String = s.chars().take(max - 3).collect();
+        format!("{kept}...")
     } else {
         s.to_string()
     }
@@ -178,5 +179,19 @@ mod tests {
         let (id, cfg, cmds) = ctx();
         let ctx = Context { identity: &id, config: &cfg, commands: &cmds };
         assert!(render_detail("nope", &ctx).is_none());
+    }
+
+    #[test]
+    fn truncate_handles_multibyte_without_panic() {
+        // 10 multibyte chars (é = 2 bytes each); truncating must not panic
+        let s = "éééééééééé";
+        let out = truncate(s, 8);
+        assert!(out.ends_with("..."));
+        assert!(out.len() <= s.len());
+    }
+
+    #[test]
+    fn truncate_short_string_unchanged() {
+        assert_eq!(truncate("hi", 80), "hi");
     }
 }
