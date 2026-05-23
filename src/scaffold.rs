@@ -28,7 +28,7 @@ pub fn create_program(target: &Path, name: &str) -> io::Result<()> {
     };
     let config_file = fs::File::create(target.join("zub.yml"))?;
     serde_yaml::to_writer(io::BufWriter::new(config_file), &config)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| io::Error::other(e.to_string()))?;
 
     let shim = "#!/bin/sh\n\
                 here=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n\

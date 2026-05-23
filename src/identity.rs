@@ -39,7 +39,7 @@ pub fn local_root_in(cwd: &Path, name: &str) -> Option<PathBuf> {
 /// Convenience wrapper using the current working directory.
 pub fn local_root(name: &str) -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
-    local_root_in(&cwd, &name)
+    local_root_in(&cwd, name)
 }
 
 /// Build an `Identity` from a config file path and its loaded config.
