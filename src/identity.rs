@@ -1,6 +1,8 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+use crate::config::Config;
+
 /// Derive the program name from the invoked path's final component.
 pub fn name_from_argv0(argv0: &str) -> String {
     Path::new(argv0)
@@ -87,6 +89,23 @@ pub fn local_root(name: &str) -> Option<PathBuf> {
     local_root_in(&cwd, &name)
 }
 
+/// Build an `Identity` from a config file path and its loaded config.
+/// `root` comes from the config's `root` field when set & non-empty, otherwise
+/// from the config file's parent directory. The config path is canonicalized.
+pub fn resolve(config_path: &Path, config: &Config) -> Option<Identity> {
+    let canon = config_path.canonicalize().ok()?;
+    let root = match config.root.as_deref() {
+        Some(r) if !r.is_empty() => PathBuf::from(r),
+        _ => canon.parent()?.to_path_buf(),
+    };
+    Some(Identity {
+        name: config.name.clone(),
+        root,
+        local_root: local_root(&config.name),
+        config_path: canon,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
     pub name: String,
@@ -161,5 +180,27 @@ mod tests {
     fn local_root_absent_otherwise() {
         let dir = tempdir().unwrap();
         assert_eq!(local_root_in(dir.path(), "x"), None);
+    }
+
+    #[test]
+    fn resolve_uses_root_field_when_set() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: rush\nroot: /opt/rush\n").unwrap();
+        let cfg = crate::config::load(&path).unwrap();
+        let id = resolve(&path, &cfg).unwrap();
+        assert_eq!(id.name, "rush");
+        assert_eq!(id.root, PathBuf::from("/opt/rush"));
+        assert_eq!(id.config_path, path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_falls_back_to_config_parent_dir() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: walker\n").unwrap();
+        let cfg = crate::config::load(&path).unwrap();
+        let id = resolve(&path, &cfg).unwrap();
+        assert_eq!(id.root, dir.path().canonicalize().unwrap());
     }
 }
