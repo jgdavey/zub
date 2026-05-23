@@ -2,12 +2,12 @@ use std::env;
 use std::path::Path;
 use std::process::exit;
 
-use sub::builtins::{self, Context};
-use sub::config;
-use sub::dispatch::{self, Resolution};
-use sub::env_setup;
-use sub::identity::{self, Identity};
-use sub::index;
+use zub::builtins::{self, Context};
+use zub::config;
+use zub::dispatch::{self, Resolution};
+use zub::env_setup;
+use zub::identity::{self, Identity};
+use zub::index;
 
 fn main() {
     let mut argv = env::args();

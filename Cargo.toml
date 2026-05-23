@@ -1,14 +1,14 @@
 [package]
-name = "sub"
+name = "zub"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "sub"
+name = "zub"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sub"
+name = "zub"
 path = "src/main.rs"
 
 [dependencies]

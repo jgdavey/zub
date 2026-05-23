@@ -73,13 +73,13 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
-            local_root: Some(PathBuf::from("/work/.sub")),
+            local_root: Some(PathBuf::from("/work/.rush")),
         };
         let vars = build_env(&id, "/bin");
         assert_eq!(
             lookup(&vars, "PATH"),
-            Some("/work/.sub/libexec:/opt/rush/libexec:/opt/rush/bin:/bin")
+            Some("/work/.rush/libexec:/opt/rush/libexec:/opt/rush/bin:/bin")
         );
-        assert_eq!(lookup(&vars, "_RUSH_LOCAL_ROOT"), Some("/work/.sub"));
+        assert_eq!(lookup(&vars, "_RUSH_LOCAL_ROOT"), Some("/work/.rush"));
     }
 }

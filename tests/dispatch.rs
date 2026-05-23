@@ -17,7 +17,7 @@ fn program_tree(name: &str) -> tempfile::TempDir {
 }
 
 fn run_program(root: &std::path::Path, name: &str, args: &[&str]) -> std::process::Output {
-    let bin = env!("CARGO_BIN_EXE_sub");
+    let bin = env!("CARGO_BIN_EXE_zub");
     Command::new(bin)
         .arg0(name)
         .args(args)
