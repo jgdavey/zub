@@ -7,7 +7,6 @@ pub mod completions;
 pub mod help;
 pub mod init;
 pub mod new;
-pub mod scaffold;
 pub mod source;
 
 /// Documentation for a built-in command, used by `help` and `commands`.
@@ -50,12 +49,6 @@ pub const BUILTIN_DOCS: &[BuiltinDoc] = &[
         help: "Creates a libexec script with front-matter.",
     },
     BuiltinDoc {
-        name: "scaffold",
-        usage: "<name> scaffold <program>",
-        summary: "Create a new sub program",
-        help: "Generates a program directory with zub.yml.",
-    },
-    BuiltinDoc {
         name: "source",
         usage: "<name> source <command>",
         summary: "Print a command's source",
@@ -77,7 +70,6 @@ pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
         "help" => help::run(args, ctx),
         "init" => init::run(args, ctx),
         "new" => new::run(args, ctx),
-        "scaffold" => scaffold::run(args, ctx),
         "source" => source::run(args, ctx),
         _ => {
             eprintln!(
