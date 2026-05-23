@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Debug, Default, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 pub struct FrontMatter {
     pub summary: Option<String>,
     pub usage: Option<String>,
