@@ -47,6 +47,7 @@ fn main() {
         name: name.clone(),
         root,
         local_root: identity::local_root(&name),
+        config_path: std::path::PathBuf::new(),
     };
 
     env_setup::apply(&identity);

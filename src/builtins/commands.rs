@@ -49,6 +49,7 @@ mod tests {
             name: "rush".into(),
             root: PathBuf::from("/r"),
             local_root: None,
+            config_path: PathBuf::new(),
         };
         let cmds = names
             .iter()

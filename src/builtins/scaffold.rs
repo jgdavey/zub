@@ -70,6 +70,7 @@ mod tests {
             name: "sub".into(),
             root: PathBuf::from("/opt/sub"),
             local_root: None,
+            config_path: PathBuf::new(),
         };
         (id, None, Vec::new())
     }

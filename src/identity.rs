@@ -92,6 +92,7 @@ pub struct Identity {
     pub name: String,
     pub root: PathBuf,
     pub local_root: Option<PathBuf>,
+    pub config_path: PathBuf,
 }
 
 #[cfg(test)]

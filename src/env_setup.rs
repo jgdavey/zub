@@ -57,6 +57,7 @@ mod tests {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
             local_root: None,
+            config_path: PathBuf::new(),
         };
         let vars = build_env(&id, "/usr/bin:/bin");
         assert_eq!(lookup(&vars, "_RUSH_ROOT"), Some("/opt/rush"));
@@ -74,6 +75,7 @@ mod tests {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
             local_root: Some(PathBuf::from("/work/.rush")),
+            config_path: PathBuf::new(),
         };
         let vars = build_env(&id, "/bin");
         assert_eq!(

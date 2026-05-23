@@ -106,6 +106,7 @@ mod tests {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
             local_root: None,
+            config_path: PathBuf::from("/opt/rush/zub.yml"),
         };
         (id, None, Vec::new())
     }

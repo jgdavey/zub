@@ -81,6 +81,7 @@ mod tests {
             name: "rush".into(),
             root: root.path().to_path_buf(),
             local_root: None,
+            config_path: PathBuf::new(),
         };
         let cmds = discover(&id);
         let names: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
@@ -98,6 +99,7 @@ mod tests {
             name: "rush".into(),
             root: root.path().to_path_buf(),
             local_root: None,
+            config_path: PathBuf::new(),
         };
         let cmds = discover(&id);
         assert_eq!(cmds.len(), 1);
@@ -114,6 +116,7 @@ mod tests {
             name: "rush".into(),
             root: root.path().to_path_buf(),
             local_root: Some(local.path().to_path_buf()),
+            config_path: PathBuf::new(),
         };
         let cmds = discover(&id);
         assert_eq!(cmds.len(), 1);
