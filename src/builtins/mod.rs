@@ -2,6 +2,8 @@ use crate::config::Config;
 use crate::identity::Identity;
 use crate::index::CommandInfo;
 
+pub mod commands;
+
 /// Documentation for a built-in command, used by `help` and `commands`.
 pub struct BuiltinDoc {
     pub name: &'static str,
@@ -29,7 +31,23 @@ pub struct Context<'a> {
 
 /// Run a built-in by name. Real implementations land in Tasks 10–16.
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
-    let _ = (args, ctx);
-    eprintln!("{}: built-in `{name}' not implemented yet", ctx.identity.name);
-    1
+    match name {
+        "commands" => commands::run(args, ctx),
+        _ => {
+            eprintln!("{}: built-in `{name}' not implemented yet", ctx.identity.name);
+            1
+        }
+    }
+}
+
+/// All command names: built-ins plus discovered externals (deduped, sorted).
+pub fn all_command_names(ctx: &Context) -> Vec<String> {
+    let mut set = std::collections::BTreeSet::new();
+    for doc in BUILTIN_DOCS {
+        set.insert(doc.name.to_string());
+    }
+    for c in ctx.commands {
+        set.insert(c.name.clone());
+    }
+    set.into_iter().collect()
 }
