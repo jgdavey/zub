@@ -5,6 +5,7 @@ use crate::index::CommandInfo;
 pub mod commands;
 pub mod completions;
 pub mod help;
+pub mod init;
 pub mod new;
 pub mod source;
 
@@ -39,6 +40,7 @@ pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
         "commands" => commands::run(args, ctx),
         "completions" => completions::run(args, ctx),
         "help" => help::run(args, ctx),
+        "init" => init::run(args, ctx),
         "new" => new::run(args, ctx),
         "source" => source::run(args, ctx),
         _ => {
