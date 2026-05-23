@@ -1,8 +1,8 @@
-# sub: a delicious way to organize programs
+# zub: a delicious way to organize programs
 
-Sub is a model for setting up shell programs that use subcommands, like `git` or `rbenv` using bash. Making a sub does not require you to write shell scripts in bash, you can write subcommands in any scripting language you prefer.
+Zub is a model for setting up shell programs that use subcommands, like `git` or `rbenv`. Building a zub program does not require you to write shell scripts in bash — you can write subcommands in any scripting language you prefer.
 
-A sub program is run at the command line using this style:
+A zub program is run at the command line using this style:
 
     $ [name of program] [subcommand] [(args)]
 
@@ -12,18 +12,19 @@ Here's some quick examples:
     $ rbenv versions           # runs the "versions" subcommand
     $ rbenv shell 1.9.3-p194   # runs the "shell" subcommand, passing "1.9.3-p194" as an argument
 
-Each subcommand maps to a separate, standalone executable program. Sub programs are laid out like so:
+Each subcommand maps to a separate, standalone executable program. Zub programs are laid out like so:
 
     .
     ├── zub.yml           # declares your program's name (and optional metadata)
-    ├── bin               # contains the main executable for your program
+    ├── bin/<name>        # entrypoint shim that hands off to the shared zub binary
     ├── completions       # (optional) bash/zsh completions
     ├── libexec           # where the subcommand executables are
     └── share             # static data storage
 
-The `sub.yml` at the root names your program. The core is a single compiled
-binary that learns its identity from this file (and from the name it's invoked
-as), so there's no build step or source-templating involved in making a sub:
+The `zub.yml` at the root names your program. A single shared `zub` binary
+provides the dispatcher and every built-in command; it learns *which* program it
+is from the config file you point it at, so there's no build step or
+source-templating involved in making a program:
 
 ``` yaml
 name: rush
@@ -32,11 +33,27 @@ version: 0.1.0
 description: A delicious way to organize programs
 ```
 
+You run your program through `bin/<name>`, a tiny generated shim that re-invokes
+the shared `zub` binary with your config:
+
+``` sh
+#!/bin/sh
+here="$(cd "$(dirname "$0")/.." && pwd)"
+exec zub -C "$here/zub.yml" "$@"
+```
+
+The `zub` binary itself must be on your `PATH`. The shim derives your program's
+root from the location of `zub.yml` (its parent directory), so you can move the
+program tree anywhere and it keeps working. You can also invoke
+`zub -C /path/to/zub.yml <subcommand>` directly, or export `ZUB_CONFIG=/path/to/zub.yml`
+so a bare `zub <subcommand>` knows which program to run. (An explicit `-C` always
+wins over `ZUB_CONFIG`.)
+
 ## Subcommands
 
 Each subcommand executable does not necessarily need to be in bash. It can be any program, shell script, or even a symlink. It just needs to run.
 
-Here's an example of adding a new subcommand. Let's say your sub is named `rush`. Run:
+Here's an example of adding a new subcommand. Let's say your program is named `rush`. Run:
 
     touch libexec/rush-who
     chmod a+x libexec/rush-who
@@ -57,23 +74,25 @@ Of course, this is a simple example... but now `rush who` should work!
 
 You can run *any* executable in the `libexec` directly, as long as it follows the `NAME-SUBCOMMAND` convention. Try out a Ruby script or your favorite language!
 
-## What's on your sub
+## What's built in
 
-You get a few commands that come with your sub:
+You get a few commands that come with every zub program:
 
 * `commands`: Prints out every subcommand available.
 * `completions`: Helps kick off subcommand autocompletion.
 * `help`: Document how to use each subcommand.
-* `init`: Shows how to load your sub with autocompletions, based on your shell.
+* `init`: Shows how to load your program with autocompletions, based on your shell.
 * `new`: Generates a new subcommand script (pre-filled with front-matter).
 * `source`: Prints the source of a subcommand.
-* `scaffold`: Creates a brand new sub program (see "Make your own sub" below).
 
-These are built into the binary. If you ever need to replace one with your own
-script, name a `libexec` command after it and add `override: true` to that
+These are built into the `zub` binary. If you ever need to replace one with your
+own script, name a `libexec` command after it and add `override: true` to that
 script's front-matter (see below) — otherwise the built-in always wins.
 
-If you ever need to reference files inside of your sub's installation, say to access a file in the `share` directory, your sub exposes the directory path in the environment, based on your sub name. For a sub named `rush`, the variable name will be `_RUSH_ROOT`.
+(Creating a brand new program is handled by the separate `zub-scaffold` tool, not
+a built-in — see "Make your own program" below.)
+
+If you ever need to reference files inside of your program's installation, say to access a file in the `share` directory, your program exposes the directory path in the environment, based on its name. For a program named `rush`, the variable name will be `_RUSH_ROOT`.
 
 Here's an example subcommand you could drop into your `libexec` directory to show this in action: (make sure to correct the name!)
 
@@ -88,7 +107,7 @@ You can also use this environment variable to call other commands inside of your
 
 ## Self-documenting subcommands
 
-Each subcommand can opt into self-documentation, which allows the subcommand to provide information when `sub` and `sub help [SUBCOMMAND]` is run.
+Each subcommand can opt into self-documentation, which allows the subcommand to provide information when `rush` and `rush help [SUBCOMMAND]` is run.
 
 This is done with a small block of *front-matter* at the top of the script: a
 run of contiguous lines that begin with your comment character followed by `@`
@@ -101,10 +120,10 @@ Here's an example from `rush who`:
 
 ``` bash
 #!/usr/bin/env bash
-#@ usage: sub who
+#@ usage: rush who
 #@ summary: Check who's logged in
 #@ help: |
-#@   This will print out when you run `sub help who`.
+#@   This will print out when you run `rush help who`.
 #@   You can have multiple lines even!
 #@
 #@      Show off an example indented
@@ -121,32 +140,32 @@ The recognized keys are `summary`, `usage`, `help`, `complete`, and `override`
 scripts). Because the body is real YAML, multi-line help uses a `|` block scalar
 and indentation is preserved.
 
-Now, when you run `sub`, the "summary" will show up:
+Now, when you run `rush`, the "summary" will show up:
 
-    usage: sub <command> [<args>]
+    usage: rush <command> [<args>]
 
-    Some useful sub commands are:
-       commands               List all sub commands
+    Some useful rush commands are:
+       commands               List all rush commands
        who                    Check who's logged in
 
-And running `sub help who` will show the "usage" line, and then the "help" block:
+And running `rush help who` will show the "usage" line, and then the "help" block:
 
-    Usage: sub who
+    Usage: rush who
 
-    This will print out when you run `sub help who`.
+    This will print out when you run `rush help who`.
     You can have multiple lines even!
 
        Show off an example indented
 
     And maybe start off another one?
 
-That's not all you get by convention with sub...
+That's not all you get by convention with zub...
 
 ## Autocompletion
 
-Your sub loves autocompletion. It's the mustard, mayo, or whatever topping you'd like that day for your commands. Just like real toppings, you have to opt into them! Sub provides two kinds of autocompletion:
+Your program loves autocompletion. It's the mustard, mayo, or whatever topping you'd like that day for your commands. Just like real toppings, you have to opt into them! Zub provides two kinds of autocompletion:
 
-1. Automatic autocompletion to find subcommands (What can this sub do?)
+1. Automatic autocompletion to find subcommands (What can this program do?)
 2. Opt-in autocompletion of potential arguments for your subcommands (What can this subcommand do?)
 
 Opting into argument autocompletion takes two things: declare `complete: true`
@@ -173,7 +192,7 @@ fall back to your shell's default (filename) completion.
 
 Passing the `--complete` flag to this subcommand short circuits the real command, and then runs another subcommand instead. The output from your subcommand's `--complete` run is sent to your shell's autocompletion handler for you, and you don't ever have to once worry about how any of that works!
 
-Run the `init` subcommand after you've prepared your sub to get your sub loading automatically in your shell.
+Run the `init` subcommand after you've prepared your program to get it loading automatically in your shell.
 
 ## Shortcuts
 
@@ -186,36 +205,41 @@ Let's say we want to shorten up our `rush who` to `rush w`. Just make a symlink!
 
 Now, `rush w` should run `libexec/rush-who`, and save you mere milliseconds of typing every day!
 
-## Make your own sub
+## Make your own program
 
-Use the `scaffold` command to generate a fresh program tree:
+Use the `zub-scaffold` tool to generate a fresh program tree:
 
-    sub scaffold rush
+    zub-scaffold rush
 
-This creates a `rush/` directory containing a `sub.yml` (with `name: rush`), a
-`bin/rush` entry pointing at the binary, and empty `libexec`, `completions`, and
-`share` directories. There's no source-templating or build step — your program's
-identity comes entirely from `sub.yml` and the name it's invoked as. (Don't call
-it `sub`, by the way! Give it a better name.)
+This creates a `rush/` directory containing a `zub.yml` (with `name: rush`), a
+self-locating `bin/rush` shim, and empty `libexec`, `completions`, and `share`
+directories. There's no source-templating or build step — your program's
+identity comes entirely from `zub.yml`. (Give it a better name than `rush`!)
 
-## Install your sub
+## Install zub and your program
 
-So you've prepared your own sub, now how do you use it? Here's one way you could install your sub in your `$HOME` directory:
+First, make the shared `zub` binary (and `zub-scaffold`) available on your
+`PATH`. From this repo:
 
-    cd
-    git clone [YOUR GIT HOST URL]/sub.git .sub
+    cargo install --path .
+
+…or copy `target/release/zub` and `target/release/zub-scaffold` somewhere on your
+`PATH`.
+
+Then load your program in your shell. Say your program lives at `$HOME/.rush`:
 
 For bash users:
 
-    echo 'eval "$($HOME/.sub/bin/sub init -)"' >> ~/.bash_profile
+    echo 'eval "$($HOME/.rush/bin/rush init -)"' >> ~/.bash_profile
     exec bash
 
 For zsh users:
 
-    echo 'eval "$($HOME/.sub/bin/sub init -)"' >> ~/.zshenv
+    echo 'eval "$($HOME/.rush/bin/rush init -)"' >> ~/.zshenv
     source ~/.zshenv
 
-You could also install your sub in a different directory, say `/usr/local`. This is just one way you could provide a way to install your sub.
+`init` derives the `PATH` entries and completion wiring from your `zub.yml`, and
+defines a shell function that runs `zub -C <your config>` under the hood.
 
 ## License
 
