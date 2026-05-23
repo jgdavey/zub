@@ -19,7 +19,7 @@ pub fn create_program(_ctx: &Context, target: &Path, name: &str, binary: &Path) 
     fs::create_dir_all(target.join("share"))?;
 
     fs::write(
-        target.join("sub.yml"),
+        target.join("zub.yml"),
         format!("name: {name}\nversion: 0.1.0\n"),
     )?;
     symlink(binary, target.join("bin").join(name))?;
@@ -85,11 +85,11 @@ mod tests {
 
         create_program(&ctx, &target, "rush", binary).unwrap();
 
-        assert!(target.join("sub.yml").exists());
+        assert!(target.join("zub.yml").exists());
         assert!(target.join("libexec").is_dir());
         assert!(target.join("completions").is_dir());
         assert!(target.join("share").is_dir());
-        let cfg = std::fs::read_to_string(target.join("sub.yml")).unwrap();
+        let cfg = std::fs::read_to_string(target.join("zub.yml")).unwrap();
         assert!(cfg.contains("name: rush"));
         let link = std::fs::read_link(target.join("bin").join("rush")).unwrap();
         assert_eq!(link, binary);
