@@ -12,7 +12,7 @@ pub struct Config {
 use std::fs;
 use std::path::Path;
 
-/// Load `sub.yml` (or `sub.yaml`) from `root`. Returns `None` when neither
+/// Load `zub.yml` (or `sub.yaml`) from `root`. Returns `None` when neither
 /// exists or the file cannot be parsed.
 pub fn load(root: &Path) -> Option<Config> {
     for filename in ["sub.yml", "sub.yaml"] {

@@ -53,7 +53,7 @@ pub const BUILTIN_DOCS: &[BuiltinDoc] = &[
         name: "scaffold",
         usage: "<name> scaffold <program>",
         summary: "Create a new sub program",
-        help: "Generates a program directory with sub.yml.",
+        help: "Generates a program directory with zub.yml.",
     },
     BuiltinDoc {
         name: "source",
@@ -70,7 +70,6 @@ pub struct Context<'a> {
     pub commands: &'a [CommandInfo],
 }
 
-/// Run a built-in by name. Real implementations land in Tasks 10–16.
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
     match name {
         "commands" => commands::run(args, ctx),

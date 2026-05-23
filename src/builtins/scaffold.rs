@@ -4,7 +4,7 @@ use std::io;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-/// Create a new sub program tree at `target`: `sub.yml`, `bin/<name>` symlinked
+/// Create a new sub program tree at `target`: `zub.yml`, `bin/<name>` symlinked
 /// to `binary`, and empty `libexec`/`completions`/`share` directories.
 pub fn create_program(_ctx: &Context, target: &Path, name: &str, binary: &Path) -> io::Result<()> {
     if target.exists() {

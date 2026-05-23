@@ -15,7 +15,7 @@ Here's some quick examples:
 Each subcommand maps to a separate, standalone executable program. Sub programs are laid out like so:
 
     .
-    ├── sub.yml           # declares your program's name (and optional metadata)
+    ├── zub.yml           # declares your program's name (and optional metadata)
     ├── bin               # contains the main executable for your program
     ├── completions       # (optional) bash/zsh completions
     ├── libexec           # where the subcommand executables are

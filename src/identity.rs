@@ -32,7 +32,7 @@ pub fn env_var_name_local(name: &str) -> String {
 }
 
 /// Resolve the program root: env-var fast path, else walk up from the
-/// invocation path looking for `sub.yml`/`sub.yaml`.
+/// invocation path looking for `zub.yml`/`zub.yaml`.
 pub fn resolve_root(name: &str, argv0: &Path) -> Option<PathBuf> {
     if let Ok(root) = env::var(env_var_name(name)) {
         if !root.is_empty() {
