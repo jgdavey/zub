@@ -76,6 +76,18 @@ fn missing_config_errors() {
 }
 
 #[test]
+fn config_flag_without_value_errors() {
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("--config")
+        .env_remove("ZUB_CONFIG")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("requires a path"));
+}
+
+#[test]
 fn unknown_command_errors() {
     let tree = program_tree("rush");
     let bin = env!("CARGO_BIN_EXE_zub");
