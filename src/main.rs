@@ -44,9 +44,9 @@ fn main() {
         }
     };
     let identity = Identity {
-        name,
+        name: name.clone(),
         root,
-        local_root: identity::local_root(),
+        local_root: identity::local_root(&name),
     };
 
     env_setup::apply(&identity);

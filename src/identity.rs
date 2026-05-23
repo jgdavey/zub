@@ -62,7 +62,7 @@ fn invocation_dir(argv0: &Path, name: &str) -> Option<PathBuf> {
 fn find_root_from(start: &Path) -> Option<PathBuf> {
     let mut current = Some(start);
     while let Some(dir) = current {
-        if dir.join("sub.yml").exists() || dir.join("sub.yaml").exists() {
+        if dir.join("zub.yml").exists() || dir.join("zub.yaml").exists() {
             return Some(dir.to_path_buf());
         }
         current = dir.parent();
@@ -70,10 +70,10 @@ fn find_root_from(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The local-sub root for a working directory: `<cwd>/.sub` when
-/// `<cwd>/.sub/libexec` exists.
-pub fn local_root_in(cwd: &Path) -> Option<PathBuf> {
-    let dot_sub = cwd.join(".sub");
+/// The local-sub root for a working directory: `<cwd>/.<name>` when
+/// `<cwd>/.<name>/libexec` exists.
+pub fn local_root_in(cwd: &Path, name: &str) -> Option<PathBuf> {
+    let dot_sub = cwd.join(format!(".{}", name));
     if dot_sub.join("libexec").is_dir() {
         Some(dot_sub)
     } else {
@@ -82,9 +82,9 @@ pub fn local_root_in(cwd: &Path) -> Option<PathBuf> {
 }
 
 /// Convenience wrapper using the current working directory.
-pub fn local_root() -> Option<PathBuf> {
+pub fn local_root(name: &str) -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
-    local_root_in(&cwd)
+    local_root_in(&cwd, &name)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,7 +135,7 @@ mod tests {
     fn root_fallback_walks_up_from_invocation_path() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join("bin")).unwrap();
-        fs::write(dir.path().join("sub.yml"), "name: walker\n").unwrap();
+        fs::write(dir.path().join("zub.yml"), "name: walker\n").unwrap();
         let bin = dir.path().join("bin").join("walker");
         fs::write(&bin, "").unwrap();
         std::env::remove_var("_WALKER_ROOT");
@@ -150,12 +150,12 @@ mod tests {
     fn local_root_detected_when_dot_sub_libexec_exists() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join(".sub").join("libexec")).unwrap();
-        assert_eq!(local_root_in(dir.path()), Some(dir.path().join(".sub")));
+        assert_eq!(local_root_in(dir.path(), "sub"), Some(dir.path().join(".sub")));
     }
 
     #[test]
     fn local_root_absent_otherwise() {
         let dir = tempdir().unwrap();
-        assert_eq!(local_root_in(dir.path()), None);
+        assert_eq!(local_root_in(dir.path(), "x"), None);
     }
 }
