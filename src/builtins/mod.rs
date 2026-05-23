@@ -3,6 +3,7 @@ use crate::identity::Identity;
 use crate::index::CommandInfo;
 
 pub mod commands;
+pub mod completions;
 pub mod help;
 
 /// Documentation for a built-in command, used by `help` and `commands`.
@@ -34,6 +35,7 @@ pub struct Context<'a> {
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
     match name {
         "commands" => commands::run(args, ctx),
+        "completions" => completions::run(args, ctx),
         "help" => help::run(args, ctx),
         _ => {
             eprintln!("{}: built-in `{name}' not implemented yet", ctx.identity.name);
