@@ -22,7 +22,7 @@ fn main() {
         Some((first, tail)) => {
             // normalize help command
             let c = match first.as_str() {
-                "-h" | "--help" => "help".to_string(),
+                "" | "-h" | "--help" => "help".to_string(),
                 other => other.to_string(),
             };
             (c, tail.to_vec())
