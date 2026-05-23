@@ -2,14 +2,7 @@ use crate::index::CommandInfo;
 use std::path::PathBuf;
 
 /// The set of command names owned by the binary.
-pub const BUILTINS: [&str; 6] = [
-    "commands",
-    "help",
-    "completions",
-    "init",
-    "new",
-    "source",
-];
+pub const BUILTINS: [&str; 6] = ["commands", "help", "completions", "init", "new", "source"];
 
 #[derive(Debug, PartialEq)]
 pub enum Resolution {
