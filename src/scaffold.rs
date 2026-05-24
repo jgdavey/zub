@@ -45,6 +45,10 @@ pub fn create_program(target: &Path, name: &str) -> io::Result<()> {
         bash_completion(name),
     )?;
 
+    let example_path = target.join("libexec").join(format!("{name}-who"));
+    fs::write(&example_path, example_command(name))?;
+    fs::set_permissions(&example_path, fs::Permissions::from_mode(0o755))?;
+
     Ok(())
 }
 
@@ -57,6 +61,7 @@ const ZSH_SHARED_COMPLETER: &str = include_str!("templates/completion-shared.zsh
 /// the program name; everything else is generic.
 const ZSH_PER_PROGRAM: &str = include_str!("templates/completion-program.zsh");
 const BASH_COMPLETION: &str = include_str!("templates/completion.bash");
+const EXAMPLE_COMMAND: &str = include_str!("templates/example-command.sh");
 
 /// The per-program zsh file (`completions/_<name>`). Carries the literal name
 /// in its `#compdef` tag and filename; the body delegates to the shared
@@ -70,6 +75,13 @@ fn zsh_per_program(name: &str) -> String {
 /// names the program.
 fn bash_completion(name: &str) -> String {
     BASH_COMPLETION.replace("@NAME@", name)
+}
+
+/// The example libexec command (`libexec/<name>-who`). Ships parseable
+/// front-matter, a `--complete` branch, and forwards its arguments to the
+/// system `who`.
+fn example_command(name: &str) -> String {
+    EXAMPLE_COMMAND.replace("@NAME@", name)
 }
 
 #[cfg(test)]
@@ -141,6 +153,26 @@ mod tests {
         assert!(bash.contains("complete -F _zub_complete rush"));
         // Body is generic: program name derived at runtime, not baked in.
         assert!(bash.contains("local prog=\"${COMP_WORDS[0]##*/}\""));
+    }
+
+    #[test]
+    fn writes_executable_example_who_command() {
+        let work = tempdir().unwrap();
+        let target = work.path().join("rush");
+        create_program(&target, "rush").unwrap();
+
+        let cmd_path = target.join("libexec").join("rush-who");
+        let body = fs::read_to_string(&cmd_path).unwrap();
+        // Front-matter the indexer can parse, with the name substituted in.
+        assert!(body.contains("#@ summary:"));
+        assert!(body.contains("#@ usage: rush who"));
+        assert!(body.contains("#@ complete: true"));
+        // Demonstrates --complete handling and forwards to the system `who`.
+        assert!(body.contains("--complete"));
+        assert!(body.contains("exec who \"$@\""));
+
+        let mode = fs::metadata(&cmd_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o111, 0o111, "example command should be executable");
     }
 
     #[test]

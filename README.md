@@ -244,8 +244,8 @@ defines a shell function that runs `zub -C <your config>` under the hood.
 ## Roadmap
 
 - [ ] Provide a script to convert script headers from old to new format
-- [ ] Bring completion scripts over during scaffold
-- [ ] Add an example script (bash?) during scaffold
+- [x] Bring completion scripts over during scaffold
+- [x] Add an example script (bash?) during scaffold
 - [ ] Cache indexed commands (if perf becomes an issue)
 - [ ] Document how to do completion
 - [ ] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
