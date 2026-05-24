@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Convert old-style sub front-matter to the new `#@` YAML format.
+
+Old style (capitalized keys, plain comment leader, multi-line Help via
+continuation comments):
+
+    #!/usr/bin/env bash
+    # Usage: sub commands
+    # Summary: List all sub commands
+    # Help: This command is used for autocompletion
+    # and for `sub help`.
+
+    set -e
+
+New style (the `#@` sigil + lowercase YAML the Rust indexer parses):
+
+    #!/usr/bin/env bash
+    #@ summary: List all sub commands
+    #@ usage: sub commands
+    #@ help: |
+    #@   This command is used for autocompletion
+    #@   and for `sub help`.
+    #@ complete: true
+
+    set -e
+
+The `complete: true` key is added when the script body contains a `--complete`
+branch: the old dispatcher offered completion for every command, but the new
+indexer only completes commands that opt in, so this preserves behavior.
+
+Usage:
+    migrate-frontmatter FILE...            # print converted scripts to stdout
+    migrate-frontmatter -i FILE...         # rewrite the files in place
+
+Files already in the new `#@` style are left untouched (idempotent).
+"""
+
+import argparse
+import re
+import sys
+
+# Old front-matter: a `#` or `;` leader (optionally repeated, e.g. `;;`),
+# then `Key: value`.
+KEY_RE = re.compile(r"^[#;];*\s*(Usage|Summary|Help):\s?(.*)$")
+# A continuation comment line inside the header (leader, then arbitrary text).
+COMMENT_RE = re.compile(r"^[#;];*\s?(.*)$")
+COMPLETE_RE = re.compile(r"--complete\b")
+
+
+def split_header(lines):
+    """Return (shebang, header_lines, rest_lines).
+
+    The header is the contiguous run of comment lines immediately after an
+    optional shebang; `rest` is everything from the first non-comment line on.
+    """
+    idx = 0
+    shebang = None
+    if lines and lines[0].startswith("#!"):
+        shebang = lines[0]
+        idx = 1
+
+    header = []
+    while idx < len(lines) and re.match(r"^[#;]", lines[idx]):
+        header.append(lines[idx])
+        idx += 1
+
+    return shebang, header, lines[idx:]
+
+
+def parse_old(header):
+    """Pull summary/usage/help out of an old-style header block.
+
+    Returns a dict with any of 'summary', 'usage', 'help' (help is a list of
+    lines). Once the `Help:` key is seen, every remaining header line is treated
+    as help continuation, matching the old awk behavior.
+    """
+    fields = {}
+    help_lines = None
+
+    for line in header:
+        if help_lines is not None:
+            # Already collecting help: strip the leader, keep the text.
+            m = COMMENT_RE.match(line)
+            help_lines.append(m.group(1) if m else "")
+            continue
+
+        m = KEY_RE.match(line)
+        if not m:
+            continue
+        key, value = m.group(1).lower(), m.group(2)
+        if key == "help":
+            help_lines = [value]
+        else:
+            fields[key] = value
+
+    if help_lines is not None:
+        # Drop trailing blank continuation lines.
+        while help_lines and not help_lines[-1].strip():
+            help_lines.pop()
+        fields["help"] = help_lines
+
+    return fields
+
+
+def render_new(fields, complete):
+    """Render the new `#@` block (a list of lines, no trailing newline)."""
+    out = []
+    if "summary" in fields:
+        out.append(f"#@ summary: {fields['summary']}")
+    if "usage" in fields:
+        out.append(f"#@ usage: {fields['usage']}")
+    if "help" in fields:
+        out.append("#@ help: |")
+        for line in fields["help"]:
+            # Marker is "#@ " (the parser strips one space); a 2-space indent
+            # remains as the YAML block-scalar body.
+            out.append(f"#@   {line}".rstrip())
+    if complete:
+        out.append("#@ complete: true")
+    return out
+
+
+def convert(text):
+    """Convert one script's text. Returns (new_text, changed)."""
+    lines = text.split("\n")
+    # Preserve whether the file ended with a newline.
+    trailing_newline = text.endswith("\n")
+    if trailing_newline:
+        lines = lines[:-1]
+
+    if any(line.startswith(("#@", "//@", "--@", ";@")) for line in lines):
+        return text, False  # already new-style
+
+    shebang, header, rest = split_header(lines)
+    fields = parse_old(header)
+    if not fields:
+        return text, False  # nothing to convert
+
+    complete = any(COMPLETE_RE.search(line) for line in rest)
+    new_block = render_new(fields, complete)
+
+    result = []
+    if shebang is not None:
+        result.append(shebang)
+    result.extend(new_block)
+    result.extend(rest)
+
+    new_text = "\n".join(result)
+    if trailing_newline:
+        new_text += "\n"
+    return new_text, True
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument("files", nargs="+", help="script files to convert")
+    parser.add_argument(
+        "-i",
+        "--in-place",
+        action="store_true",
+        help="rewrite files in place instead of printing to stdout",
+    )
+    args = parser.parse_args(argv)
+
+    multiple = len(args.files) > 1
+    status = 0
+
+    for path in args.files:
+        try:
+            with open(path, "r") as f:
+                original = f.read()
+        except OSError as e:
+            print(f"migrate-frontmatter: {path}: {e}", file=sys.stderr)
+            status = 1
+            continue
+
+        new_text, changed = convert(original)
+
+        if args.in_place:
+            if changed:
+                with open(path, "w") as f:
+                    f.write(new_text)
+                print(f"converted {path}", file=sys.stderr)
+            else:
+                print(f"skipped {path} (no old front-matter)", file=sys.stderr)
+        else:
+            if multiple:
+                print(f"==> {path} <==")
+            sys.stdout.write(new_text)
+            if multiple:
+                print()
+
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
