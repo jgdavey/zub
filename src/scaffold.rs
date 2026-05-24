@@ -37,7 +37,39 @@ pub fn create_program(target: &Path, name: &str) -> io::Result<()> {
     fs::write(&shim_path, shim)?;
     fs::set_permissions(&shim_path, fs::Permissions::from_mode(0o755))?;
 
+    let completions = target.join("completions");
+    fs::write(completions.join("_zub"), ZSH_SHARED_COMPLETER)?;
+    fs::write(completions.join(format!("_{name}")), zsh_per_program(name))?;
+    fs::write(
+        completions.join(format!("{name}.bash")),
+        bash_completion(name),
+    )?;
+
     Ok(())
+}
+
+/// The shared zsh completer, written verbatim into every program's
+/// `completions/_zub`. The program name is read from `$service` at completion
+/// time, so this file never names a specific program and never drifts.
+const ZSH_SHARED_COMPLETER: &str = include_str!("templates/completion-shared.zsh");
+
+/// Per-program and bash templates. The `@NAME@` sentinel is substituted with
+/// the program name; everything else is generic.
+const ZSH_PER_PROGRAM: &str = include_str!("templates/completion-program.zsh");
+const BASH_COMPLETION: &str = include_str!("templates/completion.bash");
+
+/// The per-program zsh file (`completions/_<name>`). Carries the literal name
+/// in its `#compdef` tag and filename; the body delegates to the shared
+/// completer.
+fn zsh_per_program(name: &str) -> String {
+    ZSH_PER_PROGRAM.replace("@NAME@", name)
+}
+
+/// The bash completion (`completions/<name>.bash`). The body is generic — it
+/// derives the program from `$COMP_WORDS` — so only the final `complete` line
+/// names the program.
+fn bash_completion(name: &str) -> String {
+    BASH_COMPLETION.replace("@NAME@", name)
 }
 
 #[cfg(test)]
@@ -73,6 +105,42 @@ mod tests {
 
         let mode = fs::metadata(&shim_path).unwrap().permissions().mode();
         assert_eq!(mode & 0o111, 0o111, "shim should be executable");
+    }
+
+    #[test]
+    fn writes_shared_zub_completer() {
+        let work = tempdir().unwrap();
+        let target = work.path().join("rush");
+        create_program(&target, "rush").unwrap();
+
+        let shared = fs::read_to_string(target.join("completions").join("_zub")).unwrap();
+        // Name-agnostic: derives the program from $service, never hardcodes it.
+        assert!(shared.contains("$service"));
+        assert!(shared.contains("_call_program ${prog}-cmds"));
+        assert!(!shared.contains("sub"));
+    }
+
+    #[test]
+    fn writes_zsh_per_program_file() {
+        let work = tempdir().unwrap();
+        let target = work.path().join("rush");
+        create_program(&target, "rush").unwrap();
+
+        let per = fs::read_to_string(target.join("completions").join("_rush")).unwrap();
+        assert!(per.contains("#compdef rush"));
+        assert!(per.contains("_zub \"$@\""));
+    }
+
+    #[test]
+    fn writes_bash_completion_with_name_only_in_complete_line() {
+        let work = tempdir().unwrap();
+        let target = work.path().join("rush");
+        create_program(&target, "rush").unwrap();
+
+        let bash = fs::read_to_string(target.join("completions").join("rush.bash")).unwrap();
+        assert!(bash.contains("complete -F _zub_complete rush"));
+        // Body is generic: program name derived at runtime, not baked in.
+        assert!(bash.contains("local prog=\"${COMP_WORDS[0]##*/}\""));
     }
 
     #[test]

@@ -1,0 +1,2 @@
+#compdef @NAME@
+_zub "$@"
