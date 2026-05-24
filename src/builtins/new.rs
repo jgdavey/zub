@@ -1,7 +1,7 @@
 use crate::builtins::Context;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct Options {
     pub local: bool,
@@ -31,6 +31,13 @@ pub fn parse_flags(args: &[String]) -> Options {
         }
     }
     opts
+}
+
+/// The base directory for a `--local` command: `<cwd>/.<program>`. Must match
+/// the convention `identity::local_root_in` discovers (`.<name>/libexec`), so a
+/// locally-generated command is actually found at dispatch time.
+fn local_base_dir(cwd: &Path, program: &str) -> PathBuf {
+    cwd.join(format!(".{program}"))
 }
 
 /// The script body for a new subcommand.
@@ -75,7 +82,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 
     let program = &ctx.identity.name;
     let base_dir: PathBuf = if opts.local {
-        std::env::current_dir().unwrap_or_default().join(".sub")
+        local_base_dir(&std::env::current_dir().unwrap_or_default(), program)
     } else {
         ctx.identity.root.clone()
     };
@@ -134,5 +141,14 @@ mod tests {
     fn parse_flags_requires_command() {
         let opts = parse_flags(&["--local".to_string()]);
         assert_eq!(opts.command, None);
+    }
+
+    #[test]
+    fn local_base_dir_uses_program_name() {
+        // Must mirror identity::local_root_in, which looks in `.<name>/libexec`.
+        assert_eq!(
+            local_base_dir(Path::new("/work"), "rush"),
+            PathBuf::from("/work/.rush")
+        );
     }
 }
