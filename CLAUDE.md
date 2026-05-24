@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`sub` lets you build a multi-command CLI (like `git` or `rbenv`) where each subcommand is a standalone executable in any language. A "sub program" is a directory tree — `bin/<name>`, `libexec/<name>-<cmd>`, `completions/`, `share/`, plus a config file — and one shared Rust binary acts as the dispatcher and all built-ins. The binary learns *which* program it is from `argv[0]` and the config file; there is no per-program build step or source-templating.
+`zub` lets you build a multi-command CLI (like `git` or `rbenv`) where each subcommand is a standalone executable in any language. A "zub program" is a directory tree — `bin/<name>`, `libexec/<name>-<cmd>`, `completions/`, `share/`, plus a `zub.yml` config — and one shared Rust binary acts as the dispatcher and all built-ins. The binary is told *which* program it is by a config-file path (`-C/--config <path>`, else `$ZUB_CONFIG`); the config is the single source of truth for `name` and `root`. There is no per-program build step or source-templating.
 
-This branch is mid-rewrite: the historical bash core (`libexec/sub*`, `bin/sub`, `prepare.sh`, `regenerate.sh`) still ships, but the Rust crate in `src/` is the active implementation. The design and task-by-task plan live in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
+This branch is mid-rewrite: the historical bash core (`libexec/sub*`, `bin/sub`, `prepare.sh`, `regenerate.sh`) still ships, but the Rust crate in `src/` is the active implementation. It builds two binaries: `zub` (dispatch + built-ins) and `zub-scaffold` (bootstraps a new program tree). The design and task-by-task plan live in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
 ## Commands
 
 ```bash
-cargo build              # build the binary (target/debug/zub)
+cargo build              # build both binaries (target/debug/{zub,zub-scaffold})
 cargo test               # run all unit + integration tests
 cargo test <name>        # run tests matching a substring, e.g. cargo test frontmatter
 cargo test --test dispatch   # run only the end-to-end binary tests
@@ -25,8 +25,8 @@ Use bare `cargo`/`rustc` (not `rustup run …`).
 
 `main.rs` orchestrates a fixed pipeline over a set of small, independently-tested library modules (`src/lib.rs` re-exports them):
 
-1. **identity** — derive the program `name` from `argv[0]`, resolve the program `root` (env-var fast path `_<NAME>_ROOT`, else walk up the filesystem looking for the config file), and detect a per-directory `local_root` (`$PWD/.<name>/libexec`). Produces an `Identity { name, root, local_root }`.
-2. **config** — load the program's YAML config (`name`, optional `version`/`description`) from the root.
+1. **config** — `main.rs` resolves the config path (`-C/--config`, else `$ZUB_CONFIG`, else error) and loads the YAML (`name`, optional `root`/`version`/`description`).
+2. **identity** — `resolve(config_path, config)` derives `name` from the config, `root` from the config's `root` field (when set) else the config file's parent dir, and detects a per-directory `local_root` (`$PWD/.<name>/libexec`). Produces an `Identity { name, root, local_root, config_path }`.
 3. **env_setup** — compute and export `PATH` (local libexec → root libexec → root bin → existing PATH), `ORIG_PATH`, and `_<NAME>_ROOT` / `_<NAME>_LOCAL_ROOT` so every child process inherits them. `build_env` is pure for testability; `apply` mutates the process env.
 4. **index** — discover `<name>-<cmd>` executables across libexec dirs (local scanned first, so it wins collisions), parsing each one's front-matter into a `CommandInfo`.
 5. **dispatch** — `resolve` a command name to `Builtin`, `External(path)`, or `NotFound`. Built-ins are authoritative unless an external command declares `override: true` in its front-matter. External commands are run via `exec` (process replacement), so unknown args pass through untouched.
@@ -37,7 +37,7 @@ Subcommands self-document via a contiguous run of comment lines beginning with a
 
 ### Built-ins (`builtins/`)
 
-`builtins/mod.rs` holds the registry (`BUILTIN_DOCS`) and `run` dispatcher; each built-in is one file (`commands`, `completions`, `help`, `init`, `new`, `source`, `scaffold`). A `Context` struct (identity + config + discovered commands) is threaded through all of them.
+`builtins/mod.rs` holds the registry (`BUILTIN_DOCS`) and `run` dispatcher; each built-in is one file (`commands`, `completions`, `help`, `init`, `new`, `source`). A `Context` struct (identity + config + discovered commands) is threaded through all of them. (Scaffolding is *not* a built-in — see below.)
 
 There are **two parallel lists of built-in names**: `BUILTINS` in `dispatch.rs` and `BUILTIN_DOCS` in `builtins/mod.rs`. A consistency test asserts they stay in sync — update both when adding/removing a built-in.
 
@@ -51,6 +51,16 @@ A command named `<name>-sh-<cmd>` is a shell-eval command (its stdout is meant t
 - **No CLI framework.** Argument dispatch is hand-rolled so unrecognized flags pass straight to external commands.
 - **Test style.** Unit tests live inline (`#[cfg(test)] mod tests`) next to each module; pure functions (`build_env`, `parse_str`, `resolve`) are favored so logic is testable without filesystem or process effects. `tests/dispatch.rs` builds temp program trees and runs the compiled binary end-to-end via `CARGO_BIN_EXE_zub`.
 
-## Known in-progress inconsistency
+## Scaffolding & templates
 
-The crate is named `zub` (`Cargo.toml`, binary `target/debug/zub`) but the project/README still call it `sub`. The rename is incomplete: `identity.rs::find_root_from` searches for `zub.yml`/`zub.yaml`, while `config.rs::load` and `builtins/scaffold.rs` still read/write `sub.yml`/`sub.yaml`. These must agree on one config filename — reconcile them before relying on root resolution + config load together.
+### Scaffolding (`scaffold.rs` + `bin/zub-scaffold.rs`)
+
+`scaffold::create_program(target, name)` bootstraps a new program tree: `zub.yml`, a self-locating `bin/<name>` shim (re-execs `zub -C <root>/zub.yml`), the completion scripts (`completions/_zub` shared + `_<name>` + `<name>.bash`), and an example `libexec/<name>-who` command (front-matter + `--complete` branch + forwards to system `who`). `bin/zub-scaffold.rs` is a thin `main` over it.
+
+### Scaffold templates (`src/templates/`)
+
+The scaffolded shell files live as real, lint-able files in `src/templates/`, embedded at compile time via `include_str!`. The `@NAME@` sentinel is replaced with the program name. Edit these files directly — not escaped Rust string literals. The zsh completer is name-agnostic (reads `$service`); only the per-program `_<name>` and `<name>.bash` carry the literal name.
+
+### `migrate-frontmatter` (repo root)
+
+Standalone Python 3 script converting old-style front-matter (`# Summary:`/`# Usage:`/`# Help:`) to the new `#@` YAML. Adds `complete: true` when the body has a `--complete` branch. Idempotent; `-i` rewrites in place, else prints to stdout.
