@@ -243,7 +243,7 @@ defines a shell function that runs `zub -C <your config>` under the hood.
 
 ## Roadmap
 
-- [ ] Provide a script to convert script headers from old to new format
+- [x] Provide a script to convert script headers from old to new format
 - [x] Bring completion scripts over during scaffold
 - [x] Add an example script (bash?) during scaffold
 - [ ] Cache indexed commands (if perf becomes an issue)
