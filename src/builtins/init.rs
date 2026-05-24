@@ -20,7 +20,7 @@ pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String
         }
         "zsh" => {
             out.push_str(&format!("fpath=($fpath {root}/completions)\n"));
-            out.push_str(&format!("autoload -U _{prog}\n"));
+            out.push_str(&format!("autoload -U _{prog} _zub\n"));
             out.push_str(&format!("compdef _{prog} {prog}\n"));
         }
         _ => {}
