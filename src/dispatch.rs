@@ -1,4 +1,4 @@
-use crate::index::CommandInfo;
+use crate::index::Index;
 use std::path::PathBuf;
 
 /// The set of command names owned by the binary.
@@ -7,28 +7,41 @@ pub const BUILTINS: [&str; 6] = ["commands", "help", "completions", "init", "new
 #[derive(Debug, PartialEq)]
 pub enum Resolution {
     Builtin(String),
-    External(PathBuf),
+    /// An external command, with the number of leading args its (possibly
+    /// multi-token) name consumed. The remaining args are passed through.
+    External {
+        path: PathBuf,
+        consumed: usize,
+    },
     NotFound,
 }
 
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
-/// Resolve a command name to a built-in, an external executable, or not-found.
-/// Built-ins are authoritative unless an external command with the same name
-/// declares `override: true`.
-pub fn resolve(command: &str, commands: &[CommandInfo]) -> Resolution {
-    let external = commands.iter().find(|c| c.name == command);
-    if BUILTINS.contains(&command) {
-        match external {
-            Some(c) if c.front.overrides => Resolution::External(c.path.clone()),
-            _ => Resolution::Builtin(command.to_string()),
+/// Resolve the leading args to a built-in, an external executable, or not-found.
+/// External names may be multi-token (`db migrate`); the longest leading run of
+/// args that matches a command's space-joined name wins. Built-ins are
+/// single-token and authoritative for `args[0]` unless a depth-1 external with
+/// the same name declares `override: true`.
+pub fn resolve(args: &[String], index: &Index) -> Resolution {
+    let Some(first) = args.first() else {
+        return Resolution::NotFound;
+    };
+
+    if BUILTINS.contains(&first.as_str()) {
+        let overriding = index.get(first).is_some_and(|c| c.front.overrides);
+        if !overriding {
+            return Resolution::Builtin(first.clone());
         }
-    } else {
-        match external {
-            Some(c) => Resolution::External(c.path.clone()),
-            None => Resolution::NotFound,
-        }
+    }
+
+    match index.resolve(args) {
+        Some((consumed, info)) => Resolution::External {
+            path: info.path.clone(),
+            consumed,
+        },
+        None => Resolution::NotFound,
     }
 }
 
@@ -44,11 +57,12 @@ pub fn exec_external(name: &str, path: &std::path::Path, args: &[String]) -> ! {
 mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
+    use crate::index::CommandInfo;
 
     fn cmd(name: &str, overrides: bool) -> CommandInfo {
         CommandInfo {
             name: name.to_string(),
-            path: PathBuf::from(format!("/libexec/rush-{name}")),
+            path: PathBuf::from(format!("/libexec/{}", name.replace(' ', "/"))),
             front: FrontMatter {
                 overrides,
                 ..Default::default()
@@ -57,43 +71,79 @@ mod tests {
         }
     }
 
+    fn args(s: &[&str]) -> Vec<String> {
+        s.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn index(cmds: Vec<CommandInfo>) -> Index {
+        Index::from_leaves(cmds)
+    }
+
     #[test]
-    fn external_command_resolves_to_its_path() {
-        let cmds = vec![cmd("who", false)];
+    fn external_command_resolves_with_one_token_consumed() {
         assert_eq!(
-            resolve("who", &cmds),
-            Resolution::External(PathBuf::from("/libexec/rush-who"))
+            resolve(&args(&["who"]), &index(vec![cmd("who", false)])),
+            Resolution::External {
+                path: PathBuf::from("/libexec/who"),
+                consumed: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn nested_command_consumes_its_tokens_and_passes_rest() {
+        assert_eq!(
+            resolve(
+                &args(&["db", "migrate", "--force"]),
+                &index(vec![cmd("db migrate", false)])
+            ),
+            Resolution::External {
+                path: PathBuf::from("/libexec/db/migrate"),
+                consumed: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn namespace_prefix_alone_is_not_found() {
+        assert_eq!(
+            resolve(&args(&["db"]), &index(vec![cmd("db migrate", false)])),
+            Resolution::NotFound
         );
     }
 
     #[test]
     fn unknown_command_is_not_found() {
-        assert_eq!(resolve("nope", &[]), Resolution::NotFound);
+        assert_eq!(
+            resolve(&args(&["nope"]), &index(vec![])),
+            Resolution::NotFound
+        );
     }
 
     #[test]
     fn reserved_name_resolves_to_builtin() {
         assert_eq!(
-            resolve("help", &[]),
+            resolve(&args(&["help"]), &index(vec![])),
             Resolution::Builtin("help".to_string())
         );
     }
 
     #[test]
     fn reserved_name_not_overridden_without_flag() {
-        let cmds = vec![cmd("help", false)];
         assert_eq!(
-            resolve("help", &cmds),
+            resolve(&args(&["help"]), &index(vec![cmd("help", false)])),
             Resolution::Builtin("help".to_string())
         );
     }
 
     #[test]
     fn reserved_name_overridden_with_flag() {
-        let cmds = vec![cmd("help", true)];
         assert_eq!(
-            resolve("help", &cmds),
-            Resolution::External(PathBuf::from("/libexec/rush-help"))
+            resolve(&args(&["help"]), &index(vec![cmd("help", true)])),
+            Resolution::External {
+                path: PathBuf::from("/libexec/help"),
+                consumed: 1,
+            }
         );
     }
 }

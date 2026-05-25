@@ -12,7 +12,7 @@
 
 set -e
 
-# When zub drives completion it runs this script as `@NAME@-who --complete ...`.
+# When zub drives completion it runs this script as `@NAME@ who --complete ...`.
 # Print one candidate per line for the word currently being completed; the
 # word itself is available in $COMP_LASTARG.
 if [ "$1" = "--complete" ]; then

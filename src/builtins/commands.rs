@@ -14,7 +14,7 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
             out.insert(doc.name.to_string());
         }
     }
-    for c in ctx.commands {
+    for c in ctx.index.leaves() {
         let keep = match mode {
             Some("--eval") => c.front.eval,
             Some("--no-eval") => !c.front.eval,
@@ -45,15 +45,15 @@ mod tests {
     use crate::config::Config;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
-    use crate::index::CommandInfo;
+    use crate::index::{CommandInfo, Index};
     use std::path::PathBuf;
 
-    fn ctx_with(names: &[&str]) -> (Identity, Option<Config>, Vec<CommandInfo>) {
+    fn ctx_with(names: &[&str]) -> (Identity, Option<Config>, Index) {
         let pairs: Vec<(&str, bool)> = names.iter().map(|n| (*n, false)).collect();
         ctx_with_eval(&pairs)
     }
 
-    fn ctx_with_eval(cmds: &[(&str, bool)]) -> (Identity, Option<Config>, Vec<CommandInfo>) {
+    fn ctx_with_eval(cmds: &[(&str, bool)]) -> (Identity, Option<Config>, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
@@ -64,7 +64,7 @@ mod tests {
             .iter()
             .map(|(n, eval)| CommandInfo {
                 name: n.to_string(),
-                path: PathBuf::from(format!("/r/libexec/rush-{n}")),
+                path: PathBuf::from(format!("/r/libexec/{}", n.replace(' ', "/"))),
                 front: FrontMatter {
                     eval: *eval,
                     ..Default::default()
@@ -72,7 +72,7 @@ mod tests {
                 is_local: false,
             })
             .collect();
-        (id, None, cmds)
+        (id, None, Index::from_leaves(cmds))
     }
 
     #[test]
@@ -81,7 +81,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let out = collect(&[], &ctx);
         assert!(out.contains(&"who".to_string()));
@@ -97,7 +97,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let out = collect(&["--eval".to_string()], &ctx);
         assert_eq!(out, vec!["cd".to_string()]);
@@ -109,7 +109,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let out = collect(&["--no-eval".to_string()], &ctx);
         assert!(out.contains(&"who".to_string()));

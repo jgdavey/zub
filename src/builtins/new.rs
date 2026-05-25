@@ -88,20 +88,25 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         ctx.identity.root.clone()
     };
     let libexec = base_dir.join("libexec");
-    let filepath = libexec.join(format!("{program}-{command}"));
+    // A `/` in the command name nests the file; the displayed (space-joined)
+    // name is what the user types: `new db/migrate` -> `libexec/db/migrate`,
+    // invoked as `<program> db migrate`.
+    let filepath = libexec.join(&command);
+    let display = command.replace('/', " ");
 
     if filepath.exists() {
         eprintln!("That command already exists");
         return 1;
     }
-    if let Err(e) = fs::create_dir_all(&libexec) {
-        eprintln!("{program}: could not create {}: {e}", libexec.display());
+    let parent = filepath.parent().unwrap_or(&libexec);
+    if let Err(e) = fs::create_dir_all(parent) {
+        eprintln!("{program}: could not create {}: {e}", parent.display());
         return 1;
     }
     let body = if opts.eval {
-        eval_template(program, &command)
+        eval_template(program, &display)
     } else {
-        command_template(program, &command)
+        command_template(program, &display)
     };
     if let Err(e) = fs::write(&filepath, body) {
         eprintln!("{program}: could not write {}: {e}", filepath.display());
@@ -116,6 +121,50 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+    use crate::identity::Identity;
+    use crate::index::Index;
+    use tempfile::tempdir;
+
+    fn run_in(root: &Path, args: &[&str]) {
+        let id = Identity {
+            name: "rush".into(),
+            root: root.to_path_buf(),
+            local_root: None,
+            config_path: PathBuf::new(),
+        };
+        let cfg: Option<Config> = None;
+        let index = Index::default();
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            index: &index,
+        };
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        run(&owned, &ctx);
+    }
+
+    #[test]
+    fn run_writes_bare_executable_command_file() {
+        let root = tempdir().unwrap();
+        run_in(root.path(), &["greet"]);
+        let path = root.path().join("libexec").join("greet");
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("#@ usage: rush greet"));
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o111,
+            0o111
+        );
+    }
+
+    #[test]
+    fn run_nested_creates_dirs_and_space_joined_usage() {
+        let root = tempdir().unwrap();
+        run_in(root.path(), &["db/migrate"]);
+        let path = root.path().join("libexec").join("db").join("migrate");
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("#@ usage: rush db migrate"));
+    }
 
     #[test]
     fn template_uses_program_name_and_command() {

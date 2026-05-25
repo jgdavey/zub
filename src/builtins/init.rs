@@ -97,17 +97,17 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::identity::Identity;
-    use crate::index::CommandInfo;
+    use crate::index::Index;
     use std::path::PathBuf;
 
-    fn ctx() -> (Identity, Option<Config>, Vec<CommandInfo>) {
+    fn ctx() -> (Identity, Option<Config>, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
             local_root: None,
             config_path: PathBuf::from("/opt/rush/zub.yml"),
         };
-        (id, None, Vec::new())
+        (id, None, Index::default())
     }
 
     #[test]
@@ -116,7 +116,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let script = render_init(&ctx, "bash", &[]);
         assert!(script.contains("export PATH=\"${PATH}:/opt/rush/bin\""));
@@ -128,7 +128,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let script = render_init(&ctx, "bash", &[]);
         assert!(script.contains("/opt/rush/completions/rush.bash"));
@@ -141,7 +141,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let script = render_init(&ctx, "zsh", &[]);
         assert!(script.contains("fpath=($fpath /opt/rush/completions)"));
@@ -154,7 +154,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let script = render_init(&ctx, "bash", &["cd".to_string(), "push".to_string()]);
         assert!(script.contains("cd|push)"));
@@ -166,7 +166,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let script = render_init(&ctx, "bash", &["cd".to_string()]);
         assert!(script.contains("zub -C \"/opt/rush/zub.yml\" \"$command\""));

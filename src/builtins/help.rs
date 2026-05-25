@@ -1,23 +1,21 @@
 use crate::builtins::Context;
-use crate::builtins::{all_command_names, BUILTIN_DOCS};
+use crate::builtins::{entry_summary, top_level_names, BUILTIN_DOCS};
 use std::env;
 
 struct Doc {
     summary: Option<String>,
     usage: Option<String>,
     help: Option<String>,
-    is_local: bool,
 }
 
 /// Gather documentation for a command from the built-in registry or an external
 /// command's front-matter.
 fn doc_for(name: &str, ctx: &Context) -> Option<Doc> {
-    if let Some(c) = ctx.commands.iter().find(|c| c.name == name) {
+    if let Some(c) = ctx.index.get(name) {
         return Some(Doc {
             summary: c.front.summary.clone(),
             usage: c.front.usage.clone(),
             help: c.front.help.clone(),
-            is_local: c.is_local,
         });
     }
     if let Some(b) = BUILTIN_DOCS.iter().find(|b| b.name == name) {
@@ -26,7 +24,6 @@ fn doc_for(name: &str, ctx: &Context) -> Option<Doc> {
             summary: Some(b.summary.to_string()),
             usage: Some(b.usage.replace("<name>", prog)),
             help: Some(b.help.to_string()),
-            is_local: false,
         });
     }
     None
@@ -41,29 +38,29 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Render the command table shown by bare `help`.
-pub fn render_table(ctx: &Context, columns: usize) -> String {
-    let prog = &ctx.identity.name;
-    let mut rows: Vec<(String, String)> = Vec::new();
-    let mut longest = 0;
-
-    for name in all_command_names(ctx) {
-        if let Some(doc) = doc_for(&name, ctx) {
-            if let Some(summary) = doc.summary {
-                let summary = if doc.is_local {
-                    format!("(local) {summary}")
-                } else {
-                    summary
-                };
-                longest = longest.max(name.len());
-                rows.push((name, summary));
-            }
+/// Build `(name, summary)` rows for the given entry names, marking local leaves.
+fn rows_for(entries: &[String], ctx: &Context) -> Vec<(String, String)> {
+    let mut rows = Vec::new();
+    for name in entries {
+        if let Some(summary) = entry_summary(name, ctx) {
+            let summary = match ctx.index.get(name) {
+                Some(c) if c.is_local => format!("(local) {summary}"),
+                _ => summary,
+            };
+            rows.push((name.clone(), summary));
         }
     }
+    rows
+}
 
+/// Render a command table with the given usage `header` command (e.g.
+/// `"<command>"` or `"db <command>"`) and rows.
+fn render_rows(ctx: &Context, header: &str, rows: Vec<(String, String)>, columns: usize) -> String {
+    let prog = &ctx.identity.name;
+    let longest = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
     let summary_width = columns.saturating_sub(longest + 5).max(10);
     let mut out = String::new();
-    out.push_str(&format!("Usage: {prog} <command> [<args>]\n\n"));
+    out.push_str(&format!("Usage: {prog} {header} [<args>]\n\n"));
     out.push_str(&format!("Some useful {prog} commands are:\n"));
     for (name, summary) in rows {
         out.push_str(&format!(
@@ -75,6 +72,24 @@ pub fn render_table(ctx: &Context, columns: usize) -> String {
         "\nSee '{prog} help <command>' for more information on a specific command.\n"
     ));
     out
+}
+
+/// Render the top-level command table shown by bare `help`.
+pub fn render_table(ctx: &Context, columns: usize) -> String {
+    let rows = rows_for(&top_level_names(ctx), ctx);
+    render_rows(ctx, "<command>", rows, columns)
+}
+
+/// Render the child table for a namespace prefix (e.g. `help db`).
+pub fn render_namespace_table(prefix: &str, ctx: &Context, columns: usize) -> String {
+    let children: Vec<String> = ctx
+        .index
+        .children(prefix)
+        .into_iter()
+        .map(|c| format!("{prefix} {c}"))
+        .collect();
+    let rows = rows_for(&children, ctx);
+    render_rows(ctx, &format!("{prefix} <command>"), rows, columns)
 }
 
 /// Render the detailed help for a single command. `None` if unknown.
@@ -105,29 +120,28 @@ fn terminal_columns() -> usize {
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.first().map(String::as_str) == Some("--complete") {
-        for name in all_command_names(ctx) {
-            if doc_for(&name, ctx).and_then(|d| d.usage).is_some() {
-                println!("{name}");
-            }
+        for name in top_level_names(ctx) {
+            println!("{name}");
         }
         return 0;
     }
-    match args.first() {
-        None => {
-            print!("{}", render_table(ctx, terminal_columns()));
-            0
-        }
-        Some(name) => match render_detail(name, ctx) {
-            Some(detail) => {
-                print!("{detail}");
-                0
-            }
-            None => {
-                eprintln!("{}: no such command `{name}'", ctx.identity.name);
-                1
-            }
-        },
+    if args.is_empty() {
+        print!("{}", render_table(ctx, terminal_columns()));
+        return 0;
     }
+
+    // A command name may be multi-token (`help db migrate`).
+    let name = args.join(" ");
+    if let Some(detail) = render_detail(&name, ctx) {
+        print!("{detail}");
+        return 0;
+    }
+    if ctx.index.is_namespace(&name) {
+        print!("{}", render_namespace_table(&name, ctx, terminal_columns()));
+        return 0;
+    }
+    eprintln!("{}: no such command `{name}'", ctx.identity.name);
+    1
 }
 
 #[cfg(test)]
@@ -136,10 +150,10 @@ mod tests {
     use crate::config::Config;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
-    use crate::index::CommandInfo;
+    use crate::index::{CommandInfo, Index};
     use std::path::PathBuf;
 
-    fn ctx() -> (Identity, Option<Config>, Vec<CommandInfo>) {
+    fn ctx() -> (Identity, Option<Config>, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
@@ -148,7 +162,7 @@ mod tests {
         };
         let cmds = vec![CommandInfo {
             name: "who".into(),
-            path: PathBuf::from("/r/libexec/rush-who"),
+            path: PathBuf::from("/r/libexec/who"),
             front: FrontMatter {
                 summary: Some("Check who's logged in".into()),
                 usage: Some("rush who".into()),
@@ -157,7 +171,30 @@ mod tests {
             },
             is_local: false,
         }];
-        (id, None, cmds)
+        (id, None, Index::from_leaves(cmds))
+    }
+
+    fn ctx_named(specs: &[(&str, Option<&str>)]) -> (Identity, Option<Config>, Index) {
+        let id = Identity {
+            name: "rush".into(),
+            root: PathBuf::from("/r"),
+            local_root: None,
+            config_path: PathBuf::new(),
+        };
+        let cmds = specs
+            .iter()
+            .map(|(name, summary)| CommandInfo {
+                name: name.to_string(),
+                path: PathBuf::from(format!("/r/libexec/{}", name.replace(' ', "/"))),
+                front: FrontMatter {
+                    summary: summary.map(String::from),
+                    usage: Some(format!("rush {name}")),
+                    ..Default::default()
+                },
+                is_local: false,
+            })
+            .collect();
+        (id, None, Index::from_leaves(cmds))
     }
 
     #[test]
@@ -166,7 +203,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let table = render_table(&ctx, 80);
         assert!(table.contains("rush <command>"));
@@ -175,12 +212,44 @@ mod tests {
     }
 
     #[test]
+    fn table_lists_namespace_with_synthetic_summary() {
+        let (id, cfg, cmds) = ctx_named(&[("db migrate", Some("m")), ("db seed", Some("s"))]);
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            index: &cmds,
+        };
+        let table = render_table(&ctx, 80);
+        assert!(table.contains("db"));
+        assert!(table.contains("2 subcommands"));
+        // The nested leaves are not listed at the top level.
+        assert!(!table.contains("migrate"));
+    }
+
+    #[test]
+    fn namespace_table_lists_children_full_names() {
+        let (id, cfg, cmds) = ctx_named(&[
+            ("db migrate", Some("run migrations")),
+            ("db seed", Some("seed it")),
+        ]);
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            index: &cmds,
+        };
+        let table = render_namespace_table("db", &ctx, 80);
+        assert!(table.contains("db migrate"));
+        assert!(table.contains("run migrations"));
+        assert!(table.contains("db seed"));
+    }
+
+    #[test]
     fn detail_renders_usage_summary_help() {
         let (id, cfg, cmds) = ctx();
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let detail = render_detail("who", &ctx).unwrap();
         assert!(detail.contains("Usage: rush who"));
@@ -194,7 +263,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         let detail = render_detail("commands", &ctx).unwrap();
         assert!(detail.contains("List all commands"));
@@ -206,7 +275,7 @@ mod tests {
         let ctx = Context {
             identity: &id,
             config: &cfg,
-            commands: &cmds,
+            index: &cmds,
         };
         assert!(render_detail("nope", &ctx).is_none());
     }

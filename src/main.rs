@@ -28,7 +28,10 @@ fn main() {
     };
 
     let Some(config_path) = config_path else {
-        eprintln!("zub: no config; pass -C <path> or set {}", env_setup::CONFIG);
+        eprintln!(
+            "zub: no config; pass -C <path> or set {}",
+            env_setup::CONFIG
+        );
         exit(2);
     };
 
@@ -45,34 +48,36 @@ fn main() {
         exit(1);
     };
 
-    // First arg is the command; "", "-h", "--help" map to `help`.
-    let (command, cmd_args): (String, Vec<String>) = match rest.split_first() {
-        None => ("help".to_string(), Vec::new()),
-        Some((first, tail)) => {
-            let c = match first.as_str() {
-                "" | "-h" | "--help" => "help".to_string(),
-                other => other.to_string(),
-            };
-            (c, tail.to_vec())
-        }
-    };
-
     env_setup::apply(&identity);
 
-    let commands = index::discover(&identity);
+    let index = index::discover(&identity);
     let config = Some(config);
 
     let ctx = Context {
         identity: &identity,
         config: &config,
-        commands: &commands,
+        index: &index,
     };
 
-    match dispatch::resolve(&command, &commands) {
-        Resolution::Builtin(name) => exit(builtins::run(&name, &cmd_args, &ctx)),
-        Resolution::External(path) => dispatch::exec_external(&identity.name, &path, &cmd_args),
+    // No command, or an explicit help flag, runs the `help` built-in.
+    let first = rest.first().map(String::as_str);
+    if rest.is_empty() || matches!(first, Some("") | Some("-h") | Some("--help")) {
+        let help_args = if rest.is_empty() { &[][..] } else { &rest[1..] };
+        exit(builtins::run("help", help_args, &ctx));
+    }
+
+    match dispatch::resolve(&rest, &index) {
+        Resolution::Builtin(name) => exit(builtins::run(&name, &rest[1..], &ctx)),
+        Resolution::External { path, consumed } => {
+            dispatch::exec_external(&identity.name, &path, &rest[consumed..])
+        }
         Resolution::NotFound => {
-            eprintln!("{}: no such command `{}'", identity.name, command);
+            // A namespace prefix (e.g. `db` when only `db migrate` exists) shows
+            // its child table via `help`; anything else is an error.
+            if index.is_namespace(&rest.join(" ")) {
+                exit(builtins::run("help", &rest, &ctx));
+            }
+            eprintln!("{}: no such command `{}'", identity.name, rest.join(" "));
             exit(1);
         }
     }

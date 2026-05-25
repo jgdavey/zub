@@ -45,7 +45,7 @@ pub fn create_program(target: &Path, name: &str) -> io::Result<()> {
         bash_completion(name),
     )?;
 
-    let example_path = target.join("libexec").join(format!("{name}-who"));
+    let example_path = target.join("libexec").join("who");
     fs::write(&example_path, example_command(name))?;
     fs::set_permissions(&example_path, fs::Permissions::from_mode(0o755))?;
 
@@ -77,7 +77,7 @@ fn bash_completion(name: &str) -> String {
     BASH_COMPLETION.replace("@NAME@", name)
 }
 
-/// The example libexec command (`libexec/<name>-who`). Ships parseable
+/// The example libexec command (`libexec/who`). Ships parseable
 /// front-matter, a `--complete` branch, and forwards its arguments to the
 /// system `who`.
 fn example_command(name: &str) -> String {
@@ -161,7 +161,7 @@ mod tests {
         let target = work.path().join("rush");
         create_program(&target, "rush").unwrap();
 
-        let cmd_path = target.join("libexec").join("rush-who");
+        let cmd_path = target.join("libexec").join("who");
         let body = fs::read_to_string(&cmd_path).unwrap();
         // Front-matter the indexer can parse, with the name substituted in.
         assert!(body.contains("#@ summary:"));

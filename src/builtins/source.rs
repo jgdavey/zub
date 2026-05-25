@@ -1,4 +1,4 @@
-use crate::builtins::Context;
+use crate::builtins::{top_level_names, Context};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
@@ -24,16 +24,17 @@ fn which(cmd: &str) -> Option<String> {
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.first().map(String::as_str) == Some("--complete") {
-        for c in ctx.commands {
-            println!("{}", c.name);
+        for name in top_level_names(ctx) {
+            println!("{name}");
         }
         return 0;
     }
-    let Some(command) = args.first() else {
+    if args.is_empty() {
         eprintln!("Please provide a command name");
         return 1;
-    };
-    let Some(info) = ctx.commands.iter().find(|c| &c.name == command) else {
+    }
+    let command = args.join(" ");
+    let Some(info) = ctx.index.get(&command) else {
         eprintln!("Could not find command {command}");
         return 1;
     };

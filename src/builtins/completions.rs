@@ -1,36 +1,57 @@
 use crate::builtins;
 use crate::builtins::Context;
-use crate::dispatch::BUILTINS;
+use crate::dispatch::{self, Resolution};
 use std::env;
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::Command;
 
-/// Completion words after the command, plus the COMP_* values they imply.
+/// What `completions <tokens…>` should do, once the settled tokens are resolved.
 #[derive(Debug, PartialEq)]
-pub struct CompWords {
-    pub words: Vec<String>,
-    pub last: String,
-    pub penult: Option<String>,
+pub enum CompAction {
+    /// Run a built-in's own `--complete` with these args.
+    Builtin { name: String, args: Vec<String> },
+    /// Exec an external command's `--complete` with these args (the command
+    /// opted in with `complete: true`).
+    Delegate { path: PathBuf, args: Vec<String> },
+    /// Offer these namespace child tokens.
+    Children(Vec<String>),
+    /// No completion source — let the shell fall back (exit 42).
+    Fallback,
 }
 
-/// Compute the completion words and the COMP_LASTARG / COMP_PENULT they imply.
-/// When `COMP_WORD` is unset/empty, an empty trailing word is appended (the
-/// user is starting a fresh argument).
-pub fn comp_words(args: &[String], comp_word: Option<String>) -> CompWords {
-    let mut words: Vec<String> = args.to_vec();
-    if comp_word.as_deref().unwrap_or("").is_empty() {
-        words.push(String::new());
-    }
-    let last = words.last().cloned().unwrap_or_default();
-    let penult = if words.len() > 1 {
-        Some(words[words.len() - 2].clone())
-    } else {
-        None
-    };
-    CompWords {
-        words,
-        last,
-        penult,
+/// Decide how to complete, given the settled tokens (everything before the
+/// word being typed) and the `partial` word itself. The resulting `args` are
+/// what to pass after `--complete`: the command's own remaining args followed
+/// by the partial word.
+pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
+    match dispatch::resolve(settled, ctx.index) {
+        Resolution::Builtin(name) => {
+            let mut args = settled[1..].to_vec();
+            args.push(partial.to_string());
+            CompAction::Builtin { name, args }
+        }
+        Resolution::External { path, consumed } => {
+            let completes = ctx
+                .index
+                .get(&settled[..consumed].join(" "))
+                .map(|c| c.front.complete)
+                .unwrap_or(false);
+            if !completes {
+                return CompAction::Fallback;
+            }
+            let mut args = settled[consumed..].to_vec();
+            args.push(partial.to_string());
+            CompAction::Delegate { path, args }
+        }
+        Resolution::NotFound => {
+            let prefix = settled.join(" ");
+            if ctx.index.is_namespace(&prefix) {
+                CompAction::Children(ctx.index.children(&prefix))
+            } else {
+                CompAction::Fallback
+            }
+        }
     }
 }
 
@@ -39,62 +60,56 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         return print_summaries(ctx);
     }
 
-    let Some(command) = args.first() else {
+    if args.is_empty() {
         eprintln!(
             "usage: {} completions command [arg1 arg2...]",
             ctx.identity.name
         );
         return 1;
-    };
-    let rest = &args[1..];
-
-    // Built-in completion runs in-process.
-    if BUILTINS.contains(&command.as_str())
-        && !ctx
-            .commands
-            .iter()
-            .any(|c| &c.name == command && c.front.overrides)
-    {
-        let mut a = vec!["--complete".to_string()];
-        a.extend_from_slice(rest);
-        return builtins::run(command, &a, ctx);
     }
 
-    // External command: only those declaring `complete: true` participate.
-    let Some(info) = ctx.commands.iter().find(|c| &c.name == command) else {
-        return 42; // unknown command -> generic fallback
-    };
-    if !info.front.complete {
-        return 42; // not completion-capable -> generic fallback
+    // The shell always includes the word being completed as the final arg
+    // (empty when starting fresh). Everything before it is settled.
+    let (partial, settled) = args.split_last().unwrap();
+
+    match plan(settled, partial, ctx) {
+        CompAction::Builtin { name, args } => {
+            let mut a = vec!["--complete".to_string()];
+            a.extend(args);
+            builtins::run(&name, &a, ctx)
+        }
+        CompAction::Delegate { path, args } => {
+            // Commands read the word being completed from COMP_LASTARG, and the
+            // token before it from COMP_PENULT.
+            let last = args.last().cloned().unwrap_or_default();
+            let penult = if args.len() >= 2 {
+                args[args.len() - 2].clone()
+            } else {
+                String::new()
+            };
+            env::set_var("COMP_LASTARG", &last);
+            env::set_var("COMP_PENULT", &penult);
+            let mut exec_args = vec!["--complete".to_string()];
+            exec_args.extend(args);
+            let err = Command::new(&path).args(&exec_args).exec();
+            eprintln!("{}: failed to exec completion: {err}", ctx.identity.name);
+            1
+        }
+        CompAction::Children(children) => {
+            for child in children {
+                println!("{child}");
+            }
+            0
+        }
+        CompAction::Fallback => 42,
     }
-
-    let comp_word = env::var("COMP_WORD").ok();
-    let cw = comp_words(rest, comp_word);
-    env::set_var("COMP_LASTARG", &cw.last);
-    env::set_var("COMP_PENULT", cw.penult.unwrap_or_default());
-
-    let mut exec_args = vec!["--complete".to_string()];
-    exec_args.extend(cw.words);
-    let err = Command::new(&info.path).args(&exec_args).exec();
-    eprintln!("{}: failed to exec completion: {err}", ctx.identity.name);
-    1
 }
 
-/// zsh-style `name[summary]` lines for top-level command completion.
+/// zsh-style `name[summary]` lines for top-level command completion. Lists
+/// depth-1 leaves and namespaces alongside built-ins.
 fn print_summaries(ctx: &Context) -> i32 {
-    for name in builtins::all_command_names(ctx) {
-        let summary = ctx
-            .commands
-            .iter()
-            .find(|c| c.name == name)
-            .and_then(|c| c.front.summary.clone())
-            .or_else(|| {
-                builtins::BUILTIN_DOCS
-                    .iter()
-                    .find(|b| b.name == name)
-                    .map(|b| b.summary.to_string())
-            });
-        match summary {
+    for name in builtins::top_level_names(ctx) {
+        match builtins::entry_summary(&name, ctx) {
             Some(s) => println!("{name}[{s}]"),
             None => println!("{name}"),
         }
@@ -105,29 +120,114 @@ fn print_summaries(ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+    use crate::frontmatter::FrontMatter;
+    use crate::identity::Identity;
+    use crate::index::{CommandInfo, Index};
+    use std::path::PathBuf;
 
-    #[test]
-    fn appends_empty_word_when_comp_word_unset() {
-        let cw = comp_words(&["sub".to_string()], None);
-        assert_eq!(cw.words, vec!["sub".to_string(), "".to_string()]);
-        assert_eq!(cw.last, "");
-        assert_eq!(cw.penult.as_deref(), Some("sub"));
+    fn ctx_cmds(specs: &[(&str, bool)]) -> Index {
+        let cmds = specs
+            .iter()
+            .map(|(name, complete)| CommandInfo {
+                name: name.to_string(),
+                path: PathBuf::from(format!("/lx/{}", name.replace(' ', "/"))),
+                front: FrontMatter {
+                    complete: *complete,
+                    ..Default::default()
+                },
+                is_local: false,
+            })
+            .collect();
+        Index::from_leaves(cmds)
+    }
+
+    fn with_ctx<R>(index: &Index, f: impl FnOnce(&Context) -> R) -> R {
+        let id = Identity {
+            name: "rush".into(),
+            root: PathBuf::from("/r"),
+            local_root: None,
+            config_path: PathBuf::new(),
+        };
+        let cfg: Option<Config> = None;
+        let ctx = Context {
+            identity: &id,
+            config: &cfg,
+            index,
+        };
+        f(&ctx)
     }
 
     #[test]
-    fn uses_words_as_is_when_comp_word_set() {
-        let cw = comp_words(
-            &["sub".to_string(), "fo".to_string()],
-            Some("fo".to_string()),
-        );
-        assert_eq!(cw.words, vec!["sub".to_string(), "fo".to_string()]);
-        assert_eq!(cw.last, "fo");
-        assert_eq!(cw.penult.as_deref(), Some("sub"));
+    fn plan_delegates_to_leaf_command_args() {
+        let cmds = ctx_cmds(&[("who", true)]);
+        with_ctx(&cmds, |ctx| {
+            let action = plan(&["who".to_string()], "", ctx);
+            assert_eq!(
+                action,
+                CompAction::Delegate {
+                    path: PathBuf::from("/lx/who"),
+                    args: vec!["".to_string()],
+                }
+            );
+        });
     }
 
     #[test]
-    fn single_word_has_no_penult() {
-        let cw = comp_words(&[], Some("x".to_string()));
-        assert_eq!(cw.penult, None);
+    fn plan_offers_namespace_children() {
+        let cmds = ctx_cmds(&[("db migrate", false), ("db seed", false)]);
+        with_ctx(&cmds, |ctx| {
+            let action = plan(&["db".to_string()], "", ctx);
+            assert_eq!(
+                action,
+                CompAction::Children(vec!["migrate".to_string(), "seed".to_string()])
+            );
+        });
+    }
+
+    #[test]
+    fn plan_delegates_nested_leaf_with_remaining_args() {
+        let cmds = ctx_cmds(&[("db migrate", true)]);
+        with_ctx(&cmds, |ctx| {
+            let action = plan(&["db".to_string(), "migrate".to_string()], "--f", ctx);
+            assert_eq!(
+                action,
+                CompAction::Delegate {
+                    path: PathBuf::from("/lx/db/migrate"),
+                    args: vec!["--f".to_string()],
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn plan_builtin_passes_remaining_and_partial() {
+        let cmds = ctx_cmds(&[]);
+        with_ctx(&cmds, |ctx| {
+            let action = plan(&["commands".to_string()], "--e", ctx);
+            assert_eq!(
+                action,
+                CompAction::Builtin {
+                    name: "commands".to_string(),
+                    args: vec!["--e".to_string()],
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn plan_non_completing_leaf_falls_back() {
+        let cmds = ctx_cmds(&[("who", false)]);
+        with_ctx(&cmds, |ctx| {
+            assert_eq!(plan(&["who".to_string()], "", ctx), CompAction::Fallback);
+        });
+    }
+
+    #[test]
+    fn plan_unknown_falls_back() {
+        let cmds = ctx_cmds(&[]);
+        with_ctx(&cmds, |ctx| {
+            assert_eq!(plan(&["bogus".to_string()], "", ctx), CompAction::Fallback);
+        });
     }
 }

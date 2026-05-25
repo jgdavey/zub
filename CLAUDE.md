@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`zub` lets you build a multi-command CLI (like `git` or `rbenv`) where each subcommand is a standalone executable in any language. A "zub program" is a directory tree — `bin/<name>`, `libexec/<name>-<cmd>`, `completions/`, `share/`, plus a `zub.yml` config — and one shared Rust binary acts as the dispatcher and all built-ins. The binary is told *which* program it is by a config-file path (`-C/--config <path>`, else `$ZUB_CONFIG`); the config is the single source of truth for `name` and `root`. There is no per-program build step or source-templating.
+`zub` lets you build a multi-command CLI (like `git` or `rbenv`) where each subcommand is a standalone executable in any language. A "zub program" is a directory tree — `bin/<name>`, `libexec/` (one executable per command; subdirectories become git-style nested subcommands), `completions/`, `share/`, plus a `zub.yml` config — and one shared Rust binary acts as the dispatcher and all built-ins. The binary is told *which* program it is by a config-file path (`-C/--config <path>`, else `$ZUB_CONFIG`); the config is the single source of truth for `name` and `root`. There is no per-program build step or source-templating.
 
 This branch is mid-rewrite: the historical bash core (`libexec/sub*`, `bin/sub`, `prepare.sh`, `regenerate.sh`) still ships, but the Rust crate in `src/` is the active implementation. It builds two binaries: `zub` (dispatch + built-ins) and `zub-scaffold` (bootstraps a new program tree). The design and task-by-task plan live in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
@@ -28,8 +28,8 @@ Use bare `cargo`/`rustc` (not `rustup run …`).
 1. **config** — `main.rs` resolves the config path (`-C/--config`, else `$ZUB_CONFIG`, else error) and loads the YAML (`name`, optional `root`/`version`/`description`).
 2. **identity** — `resolve(config_path, config)` derives `name` from the config, `root` from the config's `root` field (when set) else the config file's parent dir, and detects a per-directory `local_root` (`$PWD/.<name>/libexec`). Produces an `Identity { name, root, local_root, config_path }`.
 3. **env_setup** — compute and export `PATH` (local libexec → root libexec → root bin → existing PATH), `ORIG_PATH`, and `_<NAME>_ROOT` / `_<NAME>_LOCAL_ROOT` so every child process inherits them. `build_env` is pure for testability; `apply` mutates the process env.
-4. **index** — discover `<name>-<cmd>` executables across libexec dirs (local scanned first, so it wins collisions), parsing each one's front-matter into a `CommandInfo`.
-5. **dispatch** — `resolve` a command name to `Builtin`, `External(path)`, or `NotFound`. Built-ins are authoritative unless an external command declares `override: true` in its front-matter. External commands are run via `exec` (process replacement), so unknown args pass through untouched.
+4. **index** — recursively discover executable files across libexec dirs (local scanned first, so it wins collisions; dotfiles and non-executables skipped). A command's name is its path relative to libexec with separators as spaces (`db/migrate` → `"db migrate"`). Each command's front-matter is parsed into a `CommandInfo`. Helpers derive namespaces: `top_level_entries`, `namespace_children`, `is_namespace`.
+5. **dispatch** — `resolve(args, commands)` greedily matches the longest leading run of args against a command's space-joined name, returning `Builtin`, `External { path, consumed }`, or `NotFound`. `consumed` is how many tokens the (possibly multi-token) name took; the rest pass through. Built-ins are single-token and authoritative for `args[0]` unless a depth-1 external declares `override: true`. A bare namespace (`zub db`) routes to `help` for its child table. External commands are run via `exec` (process replacement).
 
 ### Front-matter (`frontmatter.rs`)
 
@@ -55,7 +55,7 @@ A command whose front-matter sets `eval: true` is a shell-eval command (its stdo
 
 ### Scaffolding (`scaffold.rs` + `bin/zub-scaffold.rs`)
 
-`scaffold::create_program(target, name)` bootstraps a new program tree: `zub.yml`, a self-locating `bin/<name>` shim (re-execs `zub -C <root>/zub.yml`), the completion scripts (`completions/_zub` shared + `_<name>` + `<name>.bash`), and an example `libexec/<name>-who` command (front-matter + `--complete` branch + forwards to system `who`). `bin/zub-scaffold.rs` is a thin `main` over it.
+`scaffold::create_program(target, name)` bootstraps a new program tree: `zub.yml`, a self-locating `bin/<name>` shim (re-execs `zub -C <root>/zub.yml`), the completion scripts (`completions/_zub` shared + `_<name>` + `<name>.bash`), and an example `libexec/who` command (front-matter + `--complete` branch + forwards to system `who`). `bin/zub-scaffold.rs` is a thin `main` over it.
 
 ### Scaffold templates (`src/templates/`)
 

@@ -4,16 +4,20 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::tempdir;
 
-/// Build a temp program tree with one external command. Returns the temp dir;
-/// the config lives at `<root>/zub.yml`.
+/// Write an executable command at `<root>/libexec/<rel>` (rel may be nested).
+fn write_cmd(root: &Path, rel: &str, body: &str) {
+    let path = root.join("libexec").join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, body).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Build a temp program tree with one external command named `hi`. Returns the
+/// temp dir; the config lives at `<root>/zub.yml`.
 fn program_tree(name: &str) -> tempfile::TempDir {
     let dir = tempdir().unwrap();
-    let libexec = dir.path().join("libexec");
-    fs::create_dir_all(&libexec).unwrap();
     fs::write(dir.path().join("zub.yml"), format!("name: {name}\n")).unwrap();
-    let script = libexec.join(format!("{name}-hi"));
-    fs::write(&script, "#!/bin/sh\necho hello-from-hi\n").unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    write_cmd(dir.path(), "hi", "#!/bin/sh\necho hello-from-hi\n");
     dir
 }
 
@@ -85,6 +89,28 @@ fn config_flag_without_value_errors() {
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("requires a path"));
+}
+
+#[test]
+fn dispatches_nested_command_and_passes_remaining_args() {
+    let tree = program_tree("rush");
+    write_cmd(
+        tree.path(),
+        "db/migrate",
+        "#!/bin/sh\necho \"migrate got: $*\"\n",
+    );
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["db", "migrate", "--force"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "migrate got: --force"
+    );
 }
 
 #[test]
