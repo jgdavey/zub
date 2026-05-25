@@ -1,3 +1,4 @@
+use crate::config;
 use crate::identity;
 use crate::identity::Identity;
 use std::env;
@@ -37,6 +38,7 @@ pub fn build_env(id: &Identity, current_path: &str) -> Vec<(String, String)> {
 /// so every child (built-in subprocess or `exec`'d command) inherits it.
 pub fn apply(id: &Identity) {
     let current_path = env::var("PATH").unwrap_or_default();
+    env::set_var(config::ENV_VAR, &id.config_path);
     for (key, value) in build_env(id, &current_path) {
         env::set_var(key, value);
     }
