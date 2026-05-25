@@ -3,28 +3,6 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
-fn shout(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-/// Name of the env var holding the program root, e.g. `rush` -> `_RUSH_ROOT`.
-pub fn env_var_name(name: &str) -> String {
-    format!("_{}_ROOT", shout(name))
-}
-
-/// Name of the env var holding the local-sub root, e.g. `_RUSH_LOCAL_ROOT`.
-pub fn env_var_name_local(name: &str) -> String {
-    format!("_{}_LOCAL_ROOT", shout(name))
-}
-
 /// The local-sub root for a working directory: `<cwd>/.<name>` when
 /// `<cwd>/.<name>/libexec` exists.
 pub fn local_root_in(cwd: &Path, name: &str) -> Option<PathBuf> {
@@ -70,18 +48,6 @@ pub struct Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn root_env_var_name_uppercases_and_substitutes() {
-        assert_eq!(env_var_name("rush"), "_RUSH_ROOT");
-        assert_eq!(env_var_name("my-tool"), "_MY_TOOL_ROOT");
-    }
-
-    #[test]
-    fn local_env_var_name() {
-        assert_eq!(env_var_name_local("rush"), "_RUSH_LOCAL_ROOT");
-    }
-
     use std::fs;
     use tempfile::tempdir;
 

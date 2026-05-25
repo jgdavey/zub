@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub const ENV_VAR: &'static str = "ZUB_CONFIG";
-
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     pub name: String,

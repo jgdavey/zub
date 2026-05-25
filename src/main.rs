@@ -21,14 +21,14 @@ fn main() {
                 exit(2);
             }
         },
-        _ => match env::var_os(config::ENV_VAR) {
+        _ => match env::var_os(env_setup::CONFIG) {
             Some(p) => (Some(PathBuf::from(p)), args.clone()),
             None => (None, args.clone()),
         },
     };
 
     let Some(config_path) = config_path else {
-        eprintln!("zub: no config; pass -C <path> or set {}", config::ENV_VAR);
+        eprintln!("zub: no config; pass -C <path> or set {}", env_setup::CONFIG);
         exit(2);
     };
 

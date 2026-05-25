@@ -35,6 +35,7 @@ pub fn resolve(command: &str, commands: &[CommandInfo]) -> Resolution {
 /// Replace the current process with the external command. Only returns on error.
 pub fn exec_external(name: &str, path: &std::path::Path, args: &[String]) -> ! {
     let err = Command::new(path).args(args).exec();
+    // Only gets here if exec failed
     eprintln!("{name}: failed to exec {}: {err}", path.display());
     std::process::exit(126);
 }

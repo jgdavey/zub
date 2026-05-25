@@ -1,6 +1,5 @@
 use crate::builtins::commands;
 use crate::builtins::Context;
-use crate::identity;
 
 /// Render the shell-integration script. `eval_commands` are the names of
 /// commands whose front-matter sets `eval: true`; the wrapper `eval`s their
@@ -8,11 +7,9 @@ use crate::identity;
 pub fn render_init(ctx: &Context, shell: &str, eval_commands: &[String]) -> String {
     let prog = &ctx.identity.name;
     let root = ctx.identity.root.to_string_lossy();
-    let root_var = identity::env_var_name(prog);
     let config = ctx.identity.config_path.to_string_lossy();
 
     let mut out = String::new();
-    out.push_str(&format!("export {root_var}=\"{root}\"\n"));
     out.push_str(&format!("export PATH=\"${{PATH}}:{root}/bin\"\n"));
 
     match shell {
@@ -122,7 +119,6 @@ mod tests {
             commands: &cmds,
         };
         let script = render_init(&ctx, "bash", &[]);
-        assert!(script.contains("export _RUSH_ROOT=\"/opt/rush\""));
         assert!(script.contains("export PATH=\"${PATH}:/opt/rush/bin\""));
     }
 
