@@ -5,21 +5,21 @@ use std::path::{Path, PathBuf};
 
 pub struct Options {
     pub local: bool,
-    pub sh: bool,
+    pub eval: bool,
     pub command: Option<String>,
 }
 
 pub fn parse_flags(args: &[String]) -> Options {
     let mut opts = Options {
         local: false,
-        sh: false,
+        eval: false,
         command: None,
     };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "-l" | "--local" => opts.local = true,
-            "--sh" => opts.sh = true,
+            "--eval" => opts.eval = true,
             "--" => {
                 opts.command = iter.next().cloned();
                 break;
@@ -54,23 +54,24 @@ pub fn command_template(program: &str, command: &str) -> String {
     )
 }
 
-/// The body for the optional `sh-` companion.
-pub fn sh_template(program: &str, command: &str) -> String {
+/// The script body for a new eval command (`eval: true`). Its stdout is `eval`'d
+/// by the shell, so the stub emits a shell statement rather than running work.
+pub fn eval_template(program: &str, command: &str) -> String {
     format!(
         "#!/usr/bin/env bash\n\
-         # Call main command\n\
-         output=\"$({program}-{command})\"\n\
-         echo \"OUTPUT FROM MAIN COMMAND: $output\" >&2\n\
-         echo \"Any output to stdout gets evaled by the shell\" >&2\n\
+         #@ usage: {program} {command}\n\
+         #@ summary: (please add docs here)\n\
+         #@ eval: true\n\
          \n\
-         echo \"pwd\"\n"
+         # stdout from an eval command is eval'd by your shell\n\
+         echo 'cd /some/path'\n"
     )
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.first().map(String::as_str) == Some("--complete") {
         println!("--local");
-        println!("--sh");
+        println!("--eval");
         return 0;
     }
 
@@ -97,17 +98,16 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         eprintln!("{program}: could not create {}: {e}", libexec.display());
         return 1;
     }
-    if let Err(e) = fs::write(&filepath, command_template(program, &command)) {
+    let body = if opts.eval {
+        eval_template(program, &command)
+    } else {
+        command_template(program, &command)
+    };
+    if let Err(e) = fs::write(&filepath, body) {
         eprintln!("{program}: could not write {}: {e}", filepath.display());
         return 1;
     }
     let _ = fs::set_permissions(&filepath, fs::Permissions::from_mode(0o755));
-
-    if opts.sh {
-        let sh_path = libexec.join(format!("{program}-sh-{command}"));
-        let _ = fs::write(&sh_path, sh_template(program, &command));
-        let _ = fs::set_permissions(&sh_path, fs::Permissions::from_mode(0o755));
-    }
 
     println!("Generated {}", filepath.display());
     0
@@ -126,15 +126,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_flags_reads_local_and_sh() {
+    fn parse_flags_reads_local_and_eval() {
         let opts = parse_flags(&[
             "--local".to_string(),
-            "--sh".to_string(),
+            "--eval".to_string(),
             "greet".to_string(),
         ]);
         assert!(opts.local);
-        assert!(opts.sh);
+        assert!(opts.eval);
         assert_eq!(opts.command.as_deref(), Some("greet"));
+    }
+
+    #[test]
+    fn eval_template_declares_eval_and_emits_stub() {
+        let t = eval_template("rush", "cd");
+        assert!(t.contains("#@ eval: true"));
+        assert!(t.contains("#@ usage: rush cd"));
+        assert!(t.contains("echo 'cd /some/path'"));
     }
 
     #[test]

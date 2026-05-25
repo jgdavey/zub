@@ -1,23 +1,27 @@
-use crate::builtins::all_command_names;
 use crate::builtins::Context;
+use crate::builtins::BUILTIN_DOCS;
 use std::collections::BTreeSet;
 
-/// Build the command-name list honoring the `--sh` / `--no-sh` filters.
-/// The leading `sh-` prefix is stripped from displayed names.
+/// Build the command-name list honoring the `--eval` / `--no-eval` filters.
+/// An eval command is an external whose front-matter sets `eval: true`; its
+/// stdout is meant to be `eval`'d by the shell. Built-ins are never eval.
 pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
     let mode = args.first().map(String::as_str);
     let mut out = BTreeSet::new();
-    for name in all_command_names(ctx) {
-        let is_sh = name.starts_with("sh-");
-        match mode {
-            Some("--sh") if is_sh => {
-                out.insert(name.strip_prefix("sh-").unwrap_or(&name).to_string());
-            }
-            Some("--sh") => {}
-            Some("--no-sh") if is_sh => {}
-            _ => {
-                out.insert(name.strip_prefix("sh-").unwrap_or(&name).to_string());
-            }
+
+    if mode != Some("--eval") {
+        for doc in BUILTIN_DOCS {
+            out.insert(doc.name.to_string());
+        }
+    }
+    for c in ctx.commands {
+        let keep = match mode {
+            Some("--eval") => c.front.eval,
+            Some("--no-eval") => !c.front.eval,
+            _ => true,
+        };
+        if keep {
+            out.insert(c.name.clone());
         }
     }
     out.into_iter().collect()
@@ -25,8 +29,8 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.first().map(String::as_str) == Some("--complete") {
-        println!("--sh");
-        println!("--no-sh");
+        println!("--eval");
+        println!("--no-eval");
         return 0;
     }
     for name in collect(args, ctx) {
@@ -45,18 +49,26 @@ mod tests {
     use std::path::PathBuf;
 
     fn ctx_with(names: &[&str]) -> (Identity, Option<Config>, Vec<CommandInfo>) {
+        let pairs: Vec<(&str, bool)> = names.iter().map(|n| (*n, false)).collect();
+        ctx_with_eval(&pairs)
+    }
+
+    fn ctx_with_eval(cmds: &[(&str, bool)]) -> (Identity, Option<Config>, Vec<CommandInfo>) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
             local_root: None,
             config_path: PathBuf::new(),
         };
-        let cmds = names
+        let cmds = cmds
             .iter()
-            .map(|n| CommandInfo {
+            .map(|(n, eval)| CommandInfo {
                 name: n.to_string(),
                 path: PathBuf::from(format!("/r/libexec/rush-{n}")),
-                front: FrontMatter::default(),
+                front: FrontMatter {
+                    eval: *eval,
+                    ..Default::default()
+                },
                 is_local: false,
             })
             .collect();
@@ -80,26 +92,26 @@ mod tests {
     }
 
     #[test]
-    fn sh_filter_strips_prefix() {
-        let (id, cfg, cmds) = ctx_with(&["sh-cd", "who"]);
+    fn eval_filter_lists_only_eval_commands() {
+        let (id, cfg, cmds) = ctx_with_eval(&[("cd", true), ("who", false)]);
         let ctx = Context {
             identity: &id,
             config: &cfg,
             commands: &cmds,
         };
-        let out = collect(&["--sh".to_string()], &ctx);
+        let out = collect(&["--eval".to_string()], &ctx);
         assert_eq!(out, vec!["cd".to_string()]);
     }
 
     #[test]
-    fn no_sh_filter_excludes_sh_commands() {
-        let (id, cfg, cmds) = ctx_with(&["sh-cd", "who"]);
+    fn no_eval_filter_excludes_eval_commands() {
+        let (id, cfg, cmds) = ctx_with_eval(&[("cd", true), ("who", false)]);
         let ctx = Context {
             identity: &id,
             config: &cfg,
             commands: &cmds,
         };
-        let out = collect(&["--no-sh".to_string()], &ctx);
+        let out = collect(&["--no-eval".to_string()], &ctx);
         assert!(out.contains(&"who".to_string()));
         assert!(!out.contains(&"cd".to_string()));
     }

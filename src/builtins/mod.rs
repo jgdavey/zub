@@ -44,7 +44,7 @@ pub const BUILTIN_DOCS: &[BuiltinDoc] = &[
     },
     BuiltinDoc {
         name: "new",
-        usage: "<name> new [--local] [--sh] <command>",
+        usage: "<name> new [--local] [--eval] <command>",
         summary: "Generate a new command",
         help: "Creates a libexec script with front-matter.",
     },

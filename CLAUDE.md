@@ -33,7 +33,7 @@ Use bare `cargo`/`rustc` (not `rustup run …`).
 
 ### Front-matter (`frontmatter.rs`)
 
-Subcommands self-document via a contiguous run of comment lines beginning with a comment leader + `@` (`#@`, `//@`, `--@`, `;@`). The text after the sigil is plain YAML. The parser skips a shebang, collects marker lines until the first non-marker line, and stops — it never reads the whole script, keeping discovery fast regardless of file size. Recognized keys: `summary`, `usage`, `help`, `complete`, `override`. Unknown keys are ignored (forward-compatible). `serde` maps the YAML `override` key to the `overrides` field.
+Subcommands self-document via a contiguous run of comment lines beginning with a comment leader + `@` (`#@`, `//@`, `--@`, `;@`). The text after the sigil is plain YAML. The parser skips a shebang, collects marker lines until the first non-marker line, and stops — it never reads the whole script, keeping discovery fast regardless of file size. Recognized keys: `summary`, `usage`, `help`, `complete`, `eval`, `override`. Unknown keys are ignored (forward-compatible). `serde` maps the YAML `override` key to the `overrides` field.
 
 ### Built-ins (`builtins/`)
 
@@ -41,9 +41,9 @@ Subcommands self-document via a contiguous run of comment lines beginning with a
 
 There are **two parallel lists of built-in names**: `BUILTINS` in `dispatch.rs` and `BUILTIN_DOCS` in `builtins/mod.rs`. A consistency test asserts they stay in sync — update both when adding/removing a built-in.
 
-### `sh-` commands
+### eval commands
 
-A command named `<name>-sh-<cmd>` is a shell-eval command (its stdout is meant to be `eval`'d by the shell, enabling `cd`-like effects). The `sh-` prefix is stripped from displayed names, and the `init` script wires up the eval. See `builtins/commands.rs`, `builtins/new.rs`, and `builtins/init.rs`.
+A command whose front-matter sets `eval: true` is a shell-eval command (its stdout is meant to be `eval`'d by the shell, enabling `cd`-like effects). There is no name munging — one command is one file, named normally. The `commands` built-in filters these with `--eval`/`--no-eval` (built-ins are never eval), and the `init` script's wrapper `eval`s their stdout (`eval $(zub -C <config> "$command")`) instead of running them normally. `new --eval` scaffolds a single file carrying `eval: true`. See `builtins/commands.rs`, `builtins/new.rs`, and `builtins/init.rs`.
 
 ## Conventions
 

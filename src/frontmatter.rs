@@ -7,6 +7,8 @@ pub struct FrontMatter {
     pub help: Option<String>,
     #[serde(default)]
     pub complete: bool,
+    #[serde(default)]
+    pub eval: bool,
     #[serde(rename = "override", default)]
     pub overrides: bool,
 }
@@ -157,5 +159,11 @@ echo not part of header
     fn override_key_maps_to_overrides() {
         let fm = parse_str("#@ override: true\n");
         assert!(fm.overrides);
+    }
+
+    #[test]
+    fn eval_key_parses_and_defaults_false() {
+        assert!(parse_str("#@ eval: true\n").eval);
+        assert!(!parse_str("#@ summary: x\n").eval);
     }
 }

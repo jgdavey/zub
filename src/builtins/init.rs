@@ -2,9 +2,10 @@ use crate::builtins::commands;
 use crate::builtins::Context;
 use crate::identity;
 
-/// Render the shell-integration script. `sh_commands` are the `sh-` command
-/// names (without prefix) that the wrapper should `eval`.
-pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String {
+/// Render the shell-integration script. `eval_commands` are the names of
+/// commands whose front-matter sets `eval: true`; the wrapper `eval`s their
+/// stdout instead of running them normally.
+pub fn render_init(ctx: &Context, shell: &str, eval_commands: &[String]) -> String {
     let prog = &ctx.identity.name;
     let root = ctx.identity.root.to_string_lossy();
     let root_var = identity::env_var_name(prog);
@@ -26,10 +27,10 @@ pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String
         _ => {}
     }
 
-    let cases = if sh_commands.is_empty() {
-        String::from("NO_SH_COMMANDS")
+    let cases = if eval_commands.is_empty() {
+        String::from("NO_EVAL_COMMANDS")
     } else {
-        sh_commands.join("|")
+        eval_commands.join("|")
     };
     out.push_str(&format!(
         "_{prog}_wrapper() {{\n\
@@ -38,7 +39,7 @@ pub fn render_init(ctx: &Context, shell: &str, sh_commands: &[String]) -> String
          \x20 if [ \"$#\" -gt 0 ]; then shift; fi\n\
          \x20 case \"$command\" in\n\
          \x20 {cases})\n\
-         \x20   evaluate=`zub -C \"{config}\" \"sh-$command\" \"$@\"` && eval \"${{evaluate}}\" ;;\n\
+         \x20   evaluate=`zub -C \"{config}\" \"$command\" \"$@\"` && eval \"${{evaluate}}\" ;;\n\
          \x20 *)\n\
          \x20   zub -C \"{config}\" \"$command\" \"$@\";;\n\
          \x20 esac\n\
@@ -88,9 +89,9 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         return 1;
     }
 
-    // `sh-` command names without the prefix, for the wrapper.
-    let sh_commands = commands::collect(&["--sh".to_string()], ctx);
-    print!("{}", render_init(ctx, &shell, &sh_commands));
+    // Names of commands declaring `eval: true`, for the wrapper.
+    let eval_commands = commands::collect(&["--eval".to_string()], ctx);
+    print!("{}", render_init(ctx, &shell, &eval_commands));
     0
 }
 
@@ -152,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn sh_wrapper_lists_sh_commands() {
+    fn eval_wrapper_lists_eval_commands() {
         let (id, cfg, cmds) = ctx();
         let ctx = Context {
             identity: &id,
@@ -164,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn wrapper_invokes_zub_with_config() {
+    fn wrapper_evals_command_without_sh_prefix() {
         let (id, cfg, cmds) = ctx();
         let ctx = Context {
             identity: &id,
@@ -172,6 +173,7 @@ mod tests {
             commands: &cmds,
         };
         let script = render_init(&ctx, "bash", &["cd".to_string()]);
-        assert!(script.contains("zub -C \"/opt/rush/zub.yml\""));
+        assert!(script.contains("zub -C \"/opt/rush/zub.yml\" \"$command\""));
+        assert!(!script.contains("sh-$command"));
     }
 }
