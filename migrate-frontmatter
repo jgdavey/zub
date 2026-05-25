@@ -28,23 +28,43 @@ The `complete: true` key is added when the script body contains a `--complete`
 branch: the old dispatcher offered completion for every command, but the new
 indexer only completes commands that opt in, so this preserves behavior.
 
+The `eval: true` key is added for shell-eval commands. The old convention marked
+these with a `<prog>-sh-<cmd>` filename; the new model uses front-matter instead.
+When a file's name carries the `-sh-` infix, `eval: true` is emitted, and in
+`-i` mode the file is also renamed to drop the `sh-` (`<prog>-sh-<cmd>` ->
+`<prog>-<cmd>`).
+
+Comment leaders are preserved: a header written with `//`, `--`, or `;`
+(including repeated forms like `;;;`) emits the matching `//@` / `--@` / `;@`
+markers rather than always `#@`, so the migrated front-matter stays a valid
+comment in the script's language.
+
 Usage:
     migrate-frontmatter FILE...            # print converted scripts to stdout
     migrate-frontmatter -i FILE...         # rewrite the files in place
 
-Files already in the new `#@` style are left untouched (idempotent).
+Files already in the new `<leader>@` style are left untouched (idempotent).
 """
 
 import argparse
+import os
 import re
 import sys
 
-# Old front-matter: a `#` or `;` leader (optionally repeated, e.g. `;;`),
-# then `Key: value`.
-KEY_RE = re.compile(r"^[#;];*\s*(Usage|Summary|Help):\s?(.*)$")
-# A continuation comment line inside the header (leader, then arbitrary text).
-COMMENT_RE = re.compile(r"^[#;];*\s?(.*)$")
+# A comment leader at the start of a line: `//`, `--`, `#`, or `;`, each
+# optionally repeated (e.g. `;;;`, `///`). Group 1 is the leader run, group 2 is
+# the remaining text after one optional space.
+LEADER_RE = re.compile(r"^(//+|--+|#+|;+)\s?(.*)$")
+# An old-style `Key: value` line, after the leader has been stripped.
+KEY_RE = re.compile(r"^(Usage|Summary|Help):\s?(.*)$")
+# Lines already in the new style, for the idempotency check.
+NEW_STYLE_PREFIXES = ("#@", "//@", "--@", ";@")
 COMPLETE_RE = re.compile(r"--complete\b")
+
+
+def base_leader(run):
+    """Map a run of comment chars (e.g. `;;;`) to its canonical marker leader."""
+    return {"/": "//", "-": "--", "#": "#", ";": ";"}[run[0]]
 
 
 def split_header(lines):
@@ -60,7 +80,7 @@ def split_header(lines):
         idx = 1
 
     header = []
-    while idx < len(lines) and re.match(r"^[#;]", lines[idx]):
+    while idx < len(lines) and LEADER_RE.match(lines[idx]):
         header.append(lines[idx])
         idx += 1
 
@@ -78,16 +98,17 @@ def parse_old(header):
     help_lines = None
 
     for line in header:
+        m = LEADER_RE.match(line)
+        content = m.group(2) if m else ""
         if help_lines is not None:
-            # Already collecting help: strip the leader, keep the text.
-            m = COMMENT_RE.match(line)
-            help_lines.append(m.group(1) if m else "")
+            # Already collecting help: keep the leader-stripped text.
+            help_lines.append(content)
             continue
 
-        m = KEY_RE.match(line)
-        if not m:
+        km = KEY_RE.match(content)
+        if not km:
             continue
-        key, value = m.group(1).lower(), m.group(2)
+        key, value = km.group(1).lower(), km.group(2)
         if key == "help":
             help_lines = [value]
         else:
@@ -102,53 +123,77 @@ def parse_old(header):
     return fields
 
 
-def render_new(fields, complete):
-    """Render the new `#@` block (a list of lines, no trailing newline)."""
+def render_new(fields, complete, is_eval, leader):
+    """Render the new `<leader>@` block (a list of lines, no trailing newline)."""
+    m = f"{leader}@"
     out = []
     if "summary" in fields:
-        out.append(f"#@ summary: {fields['summary']}")
+        out.append(f"{m} summary: {fields['summary']}")
     if "usage" in fields:
-        out.append(f"#@ usage: {fields['usage']}")
+        out.append(f"{m} usage: {fields['usage']}")
     if "help" in fields:
-        out.append("#@ help: |")
+        out.append(f"{m} help: |")
         for line in fields["help"]:
-            # Marker is "#@ " (the parser strips one space); a 2-space indent
-            # remains as the YAML block-scalar body.
-            out.append(f"#@   {line}".rstrip())
+            # Marker is "<leader>@ " (the parser strips one space); a 2-space
+            # indent remains as the YAML block-scalar body.
+            out.append(f"{m}   {line}".rstrip())
     if complete:
-        out.append("#@ complete: true")
+        out.append(f"{m} complete: true")
+    if is_eval:
+        out.append(f"{m} eval: true")
     return out
 
 
-def convert(text):
-    """Convert one script's text. Returns (new_text, changed)."""
+def convert(text, is_eval=False):
+    """Convert one script's text. Returns (new_text, changed).
+
+    `is_eval` is set by the caller when the source filename marks a shell-eval
+    command (a `-sh-` infix); it adds an `eval: true` marker.
+    """
     lines = text.split("\n")
     # Preserve whether the file ended with a newline.
     trailing_newline = text.endswith("\n")
     if trailing_newline:
         lines = lines[:-1]
 
-    if any(line.startswith(("#@", "//@", "--@", ";@")) for line in lines):
+    if any(line.startswith(NEW_STYLE_PREFIXES) for line in lines):
         return text, False  # already new-style
 
     shebang, header, rest = split_header(lines)
     fields = parse_old(header)
-    if not fields:
+    if not fields and not is_eval:
         return text, False  # nothing to convert
 
-    complete = any(COMPLETE_RE.search(line) for line in rest)
-    new_block = render_new(fields, complete)
+    leader = base_leader(LEADER_RE.match(header[0]).group(1)) if header else "#"
 
     result = []
     if shebang is not None:
         result.append(shebang)
-    result.extend(new_block)
-    result.extend(rest)
+
+    if fields:
+        complete = any(COMPLETE_RE.search(line) for line in rest)
+        result.extend(render_new(fields, complete, is_eval, leader))
+        result.extend(rest)
+    else:
+        # No old key fields to convert; just prepend the eval marker and keep
+        # the original body (including any non-key comments) intact.
+        result.append(f"{leader}@ eval: true")
+        result.extend(header)
+        result.extend(rest)
 
     new_text = "\n".join(result)
     if trailing_newline:
         new_text += "\n"
     return new_text, True
+
+
+def renamed_path(path):
+    """For a `<prog>-sh-<cmd>` file, the path with the first `-sh-` collapsed to
+    `-`. Returns None when the basename has no `-sh-` infix."""
+    head, base = os.path.split(path)
+    if "-sh-" not in base:
+        return None
+    return os.path.join(head, base.replace("-sh-", "-", 1))
 
 
 def main(argv=None):
@@ -174,7 +219,9 @@ def main(argv=None):
             status = 1
             continue
 
-        new_text, changed = convert(original)
+        new_path = renamed_path(path)
+        is_eval = new_path is not None
+        new_text, changed = convert(original, is_eval=is_eval)
 
         if args.in_place:
             if changed:
@@ -183,12 +230,29 @@ def main(argv=None):
                 print(f"converted {path}", file=sys.stderr)
             else:
                 print(f"skipped {path} (no old front-matter)", file=sys.stderr)
+            if is_eval:
+                if os.path.exists(new_path):
+                    print(
+                        f"migrate-frontmatter: {path}: not renaming, "
+                        f"{new_path} already exists",
+                        file=sys.stderr,
+                    )
+                    status = 1
+                else:
+                    os.rename(path, new_path)
+                    print(f"renamed {path} -> {new_path}", file=sys.stderr)
         else:
             if multiple:
                 print(f"==> {path} <==")
             sys.stdout.write(new_text)
             if multiple:
                 print()
+            if is_eval:
+                print(
+                    f"migrate-frontmatter: {path}: rename to {new_path} "
+                    f"(drop the sh- prefix) once migrated",
+                    file=sys.stderr,
+                )
 
     return status
 
