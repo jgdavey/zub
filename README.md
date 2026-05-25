@@ -230,12 +230,12 @@ Then load your program in your shell. Say your program lives at `$HOME/.rush`:
 
 For bash users:
 
-    echo 'eval "$($HOME/.rush/bin/rush init -)"' >> ~/.bash_profile
+    echo 'eval "$($HOME/.rush/bin/rush init - bash)"' >> ~/.bash_profile
     exec bash
 
 For zsh users:
 
-    echo 'eval "$($HOME/.rush/bin/rush init -)"' >> ~/.zshenv
+    echo 'eval "$($HOME/.rush/bin/rush init - zsh)"' >> ~/.zshenv
     source ~/.zshenv
 
 `init` derives the `PATH` entries and completion wiring from your `zub.yml`, and
