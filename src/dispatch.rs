@@ -1,4 +1,4 @@
-use crate::index::Index;
+use crate::index::{Index, Node};
 use std::path::PathBuf;
 
 /// The set of command names owned by the binary.
@@ -11,6 +11,10 @@ pub enum Resolution {
     /// multi-token) name consumed. The remaining args are passed through.
     External {
         path: PathBuf,
+        consumed: usize,
+    },
+    Namespace {
+        subcommands: Vec<String>,
         consumed: usize,
     },
     NotFound,
@@ -36,10 +40,14 @@ pub fn resolve(args: &[String], index: &Index) -> Resolution {
         }
     }
 
-    match index.resolve(args) {
-        Some((consumed, info)) => Resolution::External {
-            path: info.path.clone(),
-            consumed,
+    match index.resolve(&args) {
+        Some((consumed, Node::Leaf(c))) => Resolution::External {
+            path: c.path.clone(),
+            consumed
+        },
+        Some((consumed, node @ Node::Branch(_))) => Resolution::Namespace {
+            subcommands: node.children().unwrap(),
+            consumed
         },
         None => Resolution::NotFound,
     }
@@ -105,10 +113,13 @@ mod tests {
     }
 
     #[test]
-    fn namespace_prefix_alone_is_not_found() {
+    fn namespace_prefix_alone_is_namespace() {
         assert_eq!(
             resolve(&args(&["db"]), &index(vec![cmd("db migrate", false)])),
-            Resolution::NotFound
+            Resolution::Namespace {
+                consumed: 1,
+                subcommands: vec![String::from("migrate")]
+            }
         );
     }
 

@@ -44,14 +44,10 @@ pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
             args.push(partial.to_string());
             CompAction::Delegate { path, args }
         }
-        Resolution::NotFound => {
-            let prefix = settled.join(" ");
-            if ctx.index.is_namespace(&prefix) {
-                CompAction::Children(ctx.index.children(&prefix))
-            } else {
-                CompAction::Fallback
-            }
+        Resolution::Namespace { subcommands, .. } => {
+            CompAction::Children(subcommands)
         }
+        Resolution::NotFound => CompAction::Fallback
     }
 }
 

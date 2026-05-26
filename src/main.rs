@@ -71,12 +71,10 @@ fn main() {
         Resolution::External { path, consumed } => {
             dispatch::exec_external(&identity.name, &path, &rest[consumed..])
         }
+        Resolution::Namespace { .. } => {
+            exit(builtins::run("help", &rest, &ctx));
+        }
         Resolution::NotFound => {
-            // A namespace prefix (e.g. `db` when only `db migrate` exists) shows
-            // its child table via `help`; anything else is an error.
-            if index.is_namespace(&rest.join(" ")) {
-                exit(builtins::run("help", &rest, &ctx));
-            }
             eprintln!("{}: no such command `{}'", identity.name, rest.join(" "));
             exit(1);
         }

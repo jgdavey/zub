@@ -25,39 +25,77 @@ pub enum Node {
     Branch(BTreeMap<String, Node>),
 }
 
+impl Node {
+    pub fn children(&self) -> Option<Vec<String>> {
+        match self {
+            Node::Branch(b) => Some(b.keys().cloned().collect()),
+            _ => None,
+        }
+    }
+
+    pub fn command(&self) -> Option<&CommandInfo> {
+        match self {
+            Node::Leaf(c) => Some(c),
+            _ => None
+        }
+    }
+
+    pub fn is_namespace(&self) -> bool {
+        matches!(self, Node::Branch(_))
+    }
+}
+
 /// The command tree, rooted at a branch keyed by first path component.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Index(BTreeMap<String, Node>);
+#[derive(Debug, Clone, PartialEq)]
+pub struct Index(Node);
+
+impl Default for Index {
+    fn default() -> Index {
+        Index(Node::Branch(BTreeMap::new()))
+    }
+}
 
 impl Index {
-    /// Greedily match the longest leading run of `args` to a leaf command,
-    /// returning `(tokens_consumed, command)`. A run that ends on a branch (a
-    /// namespace) or misses returns `None`.
-    pub fn resolve(&self, args: &[String]) -> Option<(usize, &CommandInfo)> {
-        let mut branch = &self.0;
+    /// Greedily match the longest leading run of `args` to a node in the tree,
+    /// returning `(tokens_consumed, node)`. A leaf wins as soon as it is hit; a
+    /// branch wins when args run out or the next token misses inside it. Empty
+    /// args or a miss on the very first token returns `None`.
+    pub fn resolve(&self, args: &[String]) -> Option<(usize, &Node)> {
+        if args.is_empty() {
+            return None;
+        }
+        let mut node = &self.0;
         for (i, tok) in args.iter().enumerate() {
-            match branch.get(tok)? {
-                Node::Leaf(info) => return Some((i + 1, info)),
-                Node::Branch(next) => branch = next,
+            let Node::Branch(branch) = node else { panic!("should never happen") };
+            match branch.get(tok) {
+                None => {
+                    if i > 0 {
+                        return Some((i, node))
+                    } else {
+                        return None
+                    }
+                },
+                Some(n @ Node::Leaf(_)) => return Some((i + 1, n)),
+                Some(n @ Node::Branch(_)) => node = n,
             }
         }
-        None
+        Some((args.len(), node))
     }
 
     /// Navigate a space-joined `name` to its node, if any.
-    fn node(&self, name: &str) -> Option<&Node> {
-        if name.is_empty() {
+    pub fn node(&self, args: &[&str]) -> Option<(usize, &Node)> {
+        if args.is_empty() {
             return None;
         }
-        let comps: Vec<&str> = name.split(' ').collect();
-        let mut branch = &self.0;
-        for (i, tok) in comps.iter().enumerate() {
-            let node = branch.get(*tok)?;
-            if i + 1 == comps.len() {
-                return Some(node);
+        let mut node = &self.0;
+        for (i, tok) in args.iter().enumerate() {
+            let Node::Branch(branch) = node else { panic!("should never happen") };
+            let found = branch.get(*tok)?;
+            if i + 1 == args.len() {
+                return Some((i + 1, found));
             }
-            match node {
-                Node::Branch(next) => branch = next,
+            match found {
+                Node::Branch(_) => node = found,
                 Node::Leaf(_) => return None, // path runs through a leaf
             }
         }
@@ -66,36 +104,44 @@ impl Index {
 
     /// The leaf command named exactly `name`, if any.
     pub fn get(&self, name: &str) -> Option<&CommandInfo> {
-        match self.node(name)? {
-            Node::Leaf(info) => Some(info),
-            Node::Branch(_) => None,
+        let args: Vec<_> = name.split(' ').collect();
+        match self.node(&args) {
+            Some((_, Node::Leaf(info))) => Some(info),
+            Some((_, Node::Branch(_))) => None,
+            None => None,
         }
     }
 
     /// Whether `name` is a namespace (a branch).
     pub fn is_namespace(&self, name: &str) -> bool {
-        matches!(self.node(name), Some(Node::Branch(_)))
+        let args: Vec<_> = name.split(' ').collect();
+        match self.node(&args) {
+            Some((_, node)) => node.is_namespace(),
+            _ => false
+        }
     }
 
     /// Sorted child component names under namespace `prefix` (empty otherwise).
     pub fn children(&self, prefix: &str) -> Vec<String> {
-        match self.node(prefix) {
-            Some(Node::Branch(b)) => b.keys().cloned().collect(),
-            _ => Vec::new(),
-        }
+        let args: Vec<_> = prefix.split(' ').collect();
+        self.node(&args).map(|(_, node)| node.children()).flatten().unwrap_or_else(|| Vec::new())
     }
 
     /// Sorted top-level entry names (depth-1 leaves and namespaces).
     pub fn top_level(&self) -> Vec<String> {
-        self.0.keys().cloned().collect()
+        self.0.children().unwrap()
     }
 
     /// All leaf commands, sorted by full name.
     pub fn leaves(&self) -> Vec<&CommandInfo> {
         let mut out = Vec::new();
-        collect_leaves(&self.0, &mut out);
-        out.sort_by(|a, b| a.name.cmp(&b.name));
-        out
+        if let Node::Branch(root) = &self.0 {
+            collect_leaves(root, &mut out);
+            out.sort_by(|a, b| a.name.cmp(&b.name));
+            out
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -109,7 +155,7 @@ impl Index {
             let comps: Vec<String> = info.name.split(' ').map(String::from).collect();
             insert(&mut root, &comps, info);
         }
-        Index(root)
+        Index(Node::Branch(root))
     }
 }
 
@@ -157,7 +203,7 @@ pub fn discover(id: &Identity) -> Index {
         scan_dir(&dir, &dir, is_local, &mut root);
     }
 
-    Index(root)
+    Index(Node::Branch(root))
 }
 
 /// Recursively scan `dir`, inserting commands with names relative to `base`.
@@ -246,7 +292,7 @@ mod tests {
             };
             insert(&mut root, &comps, info);
         }
-        Index(root)
+        Index(Node::Branch(root))
     }
 
     #[test]
@@ -323,13 +369,20 @@ mod tests {
             .collect();
         let (consumed, info) = index.resolve(&args).unwrap();
         assert_eq!(consumed, 2);
-        assert_eq!(info.name, "db migrate");
+        if let Node::Leaf(info) = info {
+            assert_eq!(info.name, "db migrate");
+        } else {
+            panic!("not a node leaf")
+        }
     }
 
     #[test]
-    fn resolve_namespace_prefix_is_none() {
+    fn resolve_namespace_prefix_returns_branch() {
         let index = build(&["db migrate"]);
-        assert!(index.resolve(&["db".to_string()]).is_none());
+        let (consumed, node) = index.resolve(&["db".to_string()]).unwrap();
+        assert_eq!(consumed, 1);
+        assert!(node.is_namespace());
+        assert_eq!(node.children().unwrap(), vec!["migrate"]);
     }
 
     #[test]
