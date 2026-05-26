@@ -44,10 +44,8 @@ pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
             args.push(partial.to_string());
             CompAction::Delegate { path, args }
         }
-        Resolution::Namespace { subcommands, .. } => {
-            CompAction::Children(subcommands)
-        }
-        Resolution::NotFound => CompAction::Fallback
+        Resolution::Namespace { subcommands, .. } => CompAction::Children(subcommands),
+        Resolution::NotFound => CompAction::Fallback,
     }
 }
 

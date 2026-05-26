@@ -36,7 +36,7 @@ impl Node {
     pub fn command(&self) -> Option<&CommandInfo> {
         match self {
             Node::Leaf(c) => Some(c),
-            _ => None
+            _ => None,
         }
     }
 
@@ -45,15 +45,9 @@ impl Node {
     }
 }
 
-/// The command tree, rooted at a branch keyed by first path component.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Index(Node);
-
-impl Default for Index {
-    fn default() -> Index {
-        Index(Node::Branch(BTreeMap::new()))
-    }
-}
+/// The command tree, rooted at a top-level branch keyed by first path component.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Index(BTreeMap<String, Node>);
 
 impl Index {
     /// Greedily match the longest leading run of `args` to a node in the tree,
@@ -64,22 +58,19 @@ impl Index {
         if args.is_empty() {
             return None;
         }
-        let mut node = &self.0;
+        let mut branch = &self.0;
+        let mut last: Option<&Node> = None;
         for (i, tok) in args.iter().enumerate() {
-            let Node::Branch(branch) = node else { panic!("should never happen") };
             match branch.get(tok) {
-                None => {
-                    if i > 0 {
-                        return Some((i, node))
-                    } else {
-                        return None
-                    }
-                },
-                Some(n @ Node::Leaf(_)) => return Some((i + 1, n)),
-                Some(n @ Node::Branch(_)) => node = n,
+                None => return last.map(|n| (i, n)),
+                Some(leaf @ Node::Leaf(_)) => return Some((i + 1, leaf)),
+                Some(n @ Node::Branch(next)) => {
+                    branch = next;
+                    last = Some(n);
+                }
             }
         }
-        Some((args.len(), node))
+        last.map(|n| (args.len(), n))
     }
 
     /// Navigate a space-joined `name` to its node, if any.
@@ -87,15 +78,14 @@ impl Index {
         if args.is_empty() {
             return None;
         }
-        let mut node = &self.0;
+        let mut branch = &self.0;
         for (i, tok) in args.iter().enumerate() {
-            let Node::Branch(branch) = node else { panic!("should never happen") };
             let found = branch.get(*tok)?;
             if i + 1 == args.len() {
                 return Some((i + 1, found));
             }
             match found {
-                Node::Branch(_) => node = found,
+                Node::Branch(next) => branch = next,
                 Node::Leaf(_) => return None, // path runs through a leaf
             }
         }
@@ -117,31 +107,29 @@ impl Index {
         let args: Vec<_> = name.split(' ').collect();
         match self.node(&args) {
             Some((_, node)) => node.is_namespace(),
-            _ => false
+            _ => false,
         }
     }
 
     /// Sorted child component names under namespace `prefix` (empty otherwise).
     pub fn children(&self, prefix: &str) -> Vec<String> {
         let args: Vec<_> = prefix.split(' ').collect();
-        self.node(&args).map(|(_, node)| node.children()).flatten().unwrap_or_else(|| Vec::new())
+        self.node(&args)
+            .and_then(|(_, node)| node.children())
+            .unwrap_or_default()
     }
 
     /// Sorted top-level entry names (depth-1 leaves and namespaces).
     pub fn top_level(&self) -> Vec<String> {
-        self.0.children().unwrap()
+        self.0.keys().cloned().collect()
     }
 
     /// All leaf commands, sorted by full name.
     pub fn leaves(&self) -> Vec<&CommandInfo> {
         let mut out = Vec::new();
-        if let Node::Branch(root) = &self.0 {
-            collect_leaves(root, &mut out);
-            out.sort_by(|a, b| a.name.cmp(&b.name));
-            out
-        } else {
-            Vec::new()
-        }
+        collect_leaves(&self.0, &mut out);
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
     }
 }
 
@@ -155,7 +143,7 @@ impl Index {
             let comps: Vec<String> = info.name.split(' ').map(String::from).collect();
             insert(&mut root, &comps, info);
         }
-        Index(Node::Branch(root))
+        Index(root)
     }
 }
 
@@ -203,7 +191,7 @@ pub fn discover(id: &Identity) -> Index {
         scan_dir(&dir, &dir, is_local, &mut root);
     }
 
-    Index(Node::Branch(root))
+    Index(root)
 }
 
 /// Recursively scan `dir`, inserting commands with names relative to `base`.
@@ -292,7 +280,7 @@ mod tests {
             };
             insert(&mut root, &comps, info);
         }
-        Index(Node::Branch(root))
+        Index(root)
     }
 
     #[test]

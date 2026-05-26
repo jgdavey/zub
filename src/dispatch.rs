@@ -40,14 +40,14 @@ pub fn resolve(args: &[String], index: &Index) -> Resolution {
         }
     }
 
-    match index.resolve(&args) {
+    match index.resolve(args) {
         Some((consumed, Node::Leaf(c))) => Resolution::External {
             path: c.path.clone(),
-            consumed
+            consumed,
         },
         Some((consumed, node @ Node::Branch(_))) => Resolution::Namespace {
             subcommands: node.children().unwrap(),
-            consumed
+            consumed,
         },
         None => Resolution::NotFound,
     }
