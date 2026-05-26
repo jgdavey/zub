@@ -9,52 +9,63 @@ pub mod init;
 pub mod new;
 pub mod source;
 
-/// Documentation for a built-in command, used by `help` and `commands`.
-pub struct BuiltinDoc {
+/// Documentation and entry point for a built-in command.
+pub struct Builtin {
     pub name: &'static str,
     pub summary: &'static str,
     pub usage: &'static str,
     pub help: &'static str,
+    pub run: fn(&[String], &Context) -> i32,
 }
 
-pub const BUILTIN_DOCS: &[BuiltinDoc] = &[
-    BuiltinDoc {
+pub const BUILTIN_DOCS: &[Builtin] = &[
+    Builtin {
         name: "commands",
         usage: "<name> commands",
         summary: "List all commands",
         help: "Mostly used for completion and `help`.",
+        run: commands::run,
     },
-    BuiltinDoc {
+    Builtin {
         name: "completions",
         usage: "<name> completions <command> [args...]",
         summary: "Drive subcommand completion",
         help: "Called by the shell completion scripts.",
+        run: completions::run,
     },
-    BuiltinDoc {
+    Builtin {
         name: "help",
         usage: "<name> help [<command>]",
         summary: "Show help for a command",
         help: "Run `<name> help <command>` for details.",
+        run: help::run,
     },
-    BuiltinDoc {
+    Builtin {
         name: "init",
         usage: "<name> init [-]",
         summary: "Print shell integration",
         help: "Add `eval \"$(<name> init -)\"` to your shell profile.",
+        run: init::run,
     },
-    BuiltinDoc {
+    Builtin {
         name: "new",
         usage: "<name> new [--local] [--eval] <command>",
         summary: "Generate a new command",
         help: "Creates a libexec script with front-matter.",
+        run: new::run,
     },
-    BuiltinDoc {
+    Builtin {
         name: "source",
         usage: "<name> source <command>",
         summary: "Print a command's source",
         help: "Pages the file with bat/$PAGER/cat.",
+        run: source::run,
     },
 ];
+
+pub fn is_builtin(name: &str) -> bool {
+    BUILTIN_DOCS.iter().any(|d| d.name == name)
+}
 
 /// Shared context handed to every built-in.
 pub struct Context<'a> {
@@ -64,14 +75,9 @@ pub struct Context<'a> {
 }
 
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
-    match name {
-        "commands" => commands::run(args, ctx),
-        "completions" => completions::run(args, ctx),
-        "help" => help::run(args, ctx),
-        "init" => init::run(args, ctx),
-        "new" => new::run(args, ctx),
-        "source" => source::run(args, ctx),
-        _ => {
+    match BUILTIN_DOCS.iter().find(|d| d.name == name) {
+        Some(doc) => (doc.run)(args, ctx),
+        None => {
             eprintln!(
                 "{}: built-in `{name}' not implemented yet",
                 ctx.identity.name
@@ -112,19 +118,3 @@ pub fn top_level_names(ctx: &Context) -> Vec<String> {
     set.into_iter().collect()
 }
 
-#[cfg(test)]
-mod consistency_tests {
-    use super::BUILTIN_DOCS;
-    use crate::dispatch::BUILTINS;
-    use std::collections::BTreeSet;
-
-    #[test]
-    fn builtins_and_docs_cover_the_same_names() {
-        let dispatched: BTreeSet<&str> = BUILTINS.iter().copied().collect();
-        let documented: BTreeSet<&str> = BUILTIN_DOCS.iter().map(|d| d.name).collect();
-        assert_eq!(
-            dispatched, documented,
-            "BUILTINS (dispatch.rs) and BUILTIN_DOCS (builtins/mod.rs) must list the same command names"
-        );
-    }
-}

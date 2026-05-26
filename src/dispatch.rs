@@ -1,8 +1,6 @@
+use crate::builtins;
 use crate::index::{Index, Node};
 use std::path::PathBuf;
-
-/// The set of command names owned by the binary.
-pub const BUILTINS: [&str; 6] = ["commands", "help", "completions", "init", "new", "source"];
 
 #[derive(Debug, PartialEq)]
 pub enum Resolution {
@@ -33,7 +31,7 @@ pub fn resolve(args: &[String], index: &Index) -> Resolution {
         return Resolution::NotFound;
     };
 
-    if BUILTINS.contains(&first.as_str()) {
+    if builtins::is_builtin(first) {
         let overriding = index.get(first).is_some_and(|c| c.front.overrides);
         if !overriding {
             return Resolution::Builtin(first.clone());
