@@ -18,7 +18,7 @@ pub struct Builtin {
     pub run: fn(&[String], &Context) -> i32,
 }
 
-pub const BUILTIN_DOCS: &[Builtin] = &[
+pub const BUILTINS: &[Builtin] = &[
     Builtin {
         name: "commands",
         usage: "<name> commands",
@@ -64,7 +64,7 @@ pub const BUILTIN_DOCS: &[Builtin] = &[
 ];
 
 pub fn is_builtin(name: &str) -> bool {
-    BUILTIN_DOCS.iter().any(|d| d.name == name)
+    BUILTINS.iter().any(|d| d.name == name)
 }
 
 /// Shared context handed to every built-in.
@@ -75,7 +75,7 @@ pub struct Context<'a> {
 }
 
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
-    match BUILTIN_DOCS.iter().find(|d| d.name == name) {
+    match BUILTINS.iter().find(|d| d.name == name) {
         Some(doc) => (doc.run)(args, ctx),
         None => {
             eprintln!(
@@ -94,7 +94,7 @@ pub fn entry_summary(name: &str, ctx: &Context) -> Option<String> {
     if let Some(c) = ctx.index.get(name) {
         return c.front.summary.clone();
     }
-    if let Some(b) = BUILTIN_DOCS.iter().find(|b| b.name == name) {
+    if let Some(b) = BUILTINS.iter().find(|b| b.name == name) {
         return Some(b.summary.to_string());
     }
     let children = ctx.index.children(name);
@@ -109,7 +109,7 @@ pub fn entry_summary(name: &str, ctx: &Context) -> Option<String> {
 /// command names (each a depth-1 leaf or a namespace). Deduped, sorted.
 pub fn top_level_names(ctx: &Context) -> Vec<String> {
     let mut set = std::collections::BTreeSet::new();
-    for doc in BUILTIN_DOCS {
+    for doc in BUILTINS {
         set.insert(doc.name.to_string());
     }
     for entry in ctx.index.top_level() {
@@ -117,4 +117,3 @@ pub fn top_level_names(ctx: &Context) -> Vec<String> {
     }
     set.into_iter().collect()
 }
-

@@ -37,7 +37,7 @@ Subcommands self-document via a contiguous run of comment lines beginning with a
 
 ### Built-ins (`builtins/`)
 
-`builtins/mod.rs` holds the single registry (`BUILTIN_DOCS`) and `run` dispatcher; each built-in is one file (`commands`, `completions`, `help`, `init`, `new`, `source`). A `Context` struct (identity + config + discovered commands) is threaded through all of them. Each `BuiltinDoc` carries the command's name, summary/usage/help strings, and a `run: fn(&[String], &Context) -> i32` pointer — adding a built-in is a single new entry in `BUILTIN_DOCS`. Dispatch's built-in membership check (`builtins::is_builtin`) reads the same list. (Scaffolding is *not* a built-in — see below.)
+`builtins/mod.rs` holds the single registry (`BUILTINS`) and `run` dispatcher; each built-in is one file (`commands`, `completions`, `help`, `init`, `new`, `source`). A `Context` struct (identity + config + discovered commands) is threaded through all of them. Each `BuiltinDoc` carries the command's name, summary/usage/help strings, and a `run: fn(&[String], &Context) -> i32` pointer — adding a built-in is a single new entry in `BUILTIN_DOCS`. Dispatch's built-in membership check (`builtins::is_builtin`) reads the same list. (Scaffolding is *not* a built-in — see below.)
 
 ### eval commands
 

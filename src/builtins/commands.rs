@@ -1,5 +1,5 @@
 use crate::builtins::Context;
-use crate::builtins::BUILTIN_DOCS;
+use crate::builtins::BUILTINS;
 use std::collections::BTreeSet;
 
 /// Build the command-name list honoring the `--eval` / `--no-eval` filters.
@@ -10,7 +10,7 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
     let mut out = BTreeSet::new();
 
     if mode != Some("--eval") {
-        for doc in BUILTIN_DOCS {
+        for doc in BUILTINS {
             out.insert(doc.name.to_string());
         }
     }

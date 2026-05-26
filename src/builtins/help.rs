@@ -1,5 +1,5 @@
 use crate::builtins::Context;
-use crate::builtins::{entry_summary, top_level_names, BUILTIN_DOCS};
+use crate::builtins::{entry_summary, top_level_names, BUILTINS};
 use std::env;
 
 struct Doc {
@@ -18,7 +18,7 @@ fn doc_for(name: &str, ctx: &Context) -> Option<Doc> {
             help: c.front.help.clone(),
         });
     }
-    if let Some(b) = BUILTIN_DOCS.iter().find(|b| b.name == name) {
+    if let Some(b) = BUILTINS.iter().find(|b| b.name == name) {
         let prog = &ctx.identity.name;
         return Some(Doc {
             summary: Some(b.summary.to_string()),
