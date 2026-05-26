@@ -54,14 +54,14 @@ impl Index {
     /// returning `(tokens_consumed, node)`. A leaf wins as soon as it is hit; a
     /// branch wins when args run out or the next token misses inside it. Empty
     /// args or a miss on the very first token returns `None`.
-    pub fn resolve(&self, args: &[String]) -> Option<(usize, &Node)> {
+    pub fn resolve<S: AsRef<str>>(&self, args: &[S]) -> Option<(usize, &Node)> {
         if args.is_empty() {
             return None;
         }
         let mut branch = &self.0;
         let mut last: Option<&Node> = None;
         for (i, tok) in args.iter().enumerate() {
-            match branch.get(tok) {
+            match branch.get(tok.as_ref()) {
                 None => return last.map(|n| (i, n)),
                 Some(leaf @ Node::Leaf(_)) => return Some((i + 1, leaf)),
                 Some(n @ Node::Branch(next)) => {
@@ -73,23 +73,10 @@ impl Index {
         last.map(|n| (args.len(), n))
     }
 
-    /// Navigate a space-joined `name` to its node, if any.
+    /// Strict navigation: walk `args` exactly, rejecting trailing tokens past a
+    /// leaf. (Greedy `resolve` filtered to require every token consumed.)
     pub fn node(&self, args: &[&str]) -> Option<(usize, &Node)> {
-        if args.is_empty() {
-            return None;
-        }
-        let mut branch = &self.0;
-        for (i, tok) in args.iter().enumerate() {
-            let found = branch.get(*tok)?;
-            if i + 1 == args.len() {
-                return Some((i + 1, found));
-            }
-            match found {
-                Node::Branch(next) => branch = next,
-                Node::Leaf(_) => return None, // path runs through a leaf
-            }
-        }
-        None
+        self.resolve(args).filter(|(c, _)| *c == args.len())
     }
 
     /// The leaf command named exactly `name`, if any.
