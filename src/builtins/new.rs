@@ -68,13 +68,13 @@ pub fn eval_template(program: &str, command: &str) -> String {
     )
 }
 
-pub fn run(args: &[String], ctx: &Context) -> i32 {
-    if args.first().map(String::as_str) == Some("--complete") {
-        println!("--local");
-        println!("--eval");
-        return 0;
-    }
+pub fn complete(_args: &[String], _ctx: &Context) -> i32 {
+    println!("--local");
+    println!("--eval");
+    0
+}
 
+pub fn run(args: &[String], ctx: &Context) -> i32 {
     let opts = parse_flags(args);
     let Some(command) = opts.command else {
         eprintln!("Please provide a command name to generate");

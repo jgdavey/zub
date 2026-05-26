@@ -28,13 +28,16 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
-    if args.first().map(String::as_str) == Some("--complete") {
-        println!("--eval");
-        println!("--no-eval");
-        return 0;
-    }
     for name in collect(args, ctx) {
         println!("{name}");
+    }
+    0
+}
+
+pub fn complete(args: &[String], _ctx: &Context) -> i32 {
+    if args.is_empty() {
+        println!("--eval");
+        println!("--no-eval");
     }
     0
 }

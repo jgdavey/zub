@@ -22,13 +22,14 @@ fn which(cmd: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-pub fn run(args: &[String], ctx: &Context) -> i32 {
-    if args.first().map(String::as_str) == Some("--complete") {
-        for name in top_level_names(ctx) {
-            println!("{name}");
-        }
-        return 0;
+pub fn complete(_args: &[String], ctx: &Context) -> i32 {
+    for name in top_level_names(ctx) {
+        println!("{name}");
     }
+    0
+}
+
+pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.is_empty() {
         eprintln!("Please provide a command name");
         return 1;

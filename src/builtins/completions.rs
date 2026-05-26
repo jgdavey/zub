@@ -49,6 +49,10 @@ pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
     }
 }
 
+pub fn complete(_args: &[String], _ctx: &Context) -> i32 {
+    0
+}
+
 pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.first().map(String::as_str) == Some("--commands") {
         return print_summaries(ctx);
@@ -67,11 +71,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     let (partial, settled) = args.split_last().unwrap();
 
     match plan(settled, partial, ctx) {
-        CompAction::Builtin { name, args } => {
-            let mut a = vec!["--complete".to_string()];
-            a.extend(args);
-            builtins::run(&name, &a, ctx)
-        }
+        CompAction::Builtin { name, args } => builtins::complete(&name, &args, ctx),
         CompAction::Delegate { path, args } => {
             // Commands read the word being completed from COMP_LASTARG, and the
             // token before it from COMP_PENULT.

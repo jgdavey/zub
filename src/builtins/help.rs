@@ -117,14 +117,16 @@ fn terminal_columns() -> usize {
         .and_then(|c| c.parse().ok())
         .unwrap_or(80)
 }
-
-pub fn run(args: &[String], ctx: &Context) -> i32 {
-    if args.first().map(String::as_str) == Some("--complete") {
+pub fn complete(args: &[String], ctx: &Context) -> i32 {
+    if args.is_empty() {
         for name in top_level_names(ctx) {
             println!("{name}");
         }
-        return 0;
     }
+    0
+}
+
+pub fn run(args: &[String], ctx: &Context) -> i32 {
     if args.is_empty() {
         print!("{}", render_table(ctx, terminal_columns()));
         return 0;

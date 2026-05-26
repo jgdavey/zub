@@ -16,6 +16,7 @@ pub struct Builtin {
     pub usage: &'static str,
     pub help: &'static str,
     pub run: fn(&[String], &Context) -> i32,
+    pub complete: fn(&[String], &Context) -> i32,
 }
 
 pub const BUILTINS: &[Builtin] = &[
@@ -25,6 +26,7 @@ pub const BUILTINS: &[Builtin] = &[
         summary: "List all commands",
         help: "Mostly used for completion and `help`.",
         run: commands::run,
+        complete: commands::complete,
     },
     Builtin {
         name: "completions",
@@ -32,6 +34,7 @@ pub const BUILTINS: &[Builtin] = &[
         summary: "Drive subcommand completion",
         help: "Called by the shell completion scripts.",
         run: completions::run,
+        complete: completions::complete,
     },
     Builtin {
         name: "help",
@@ -39,6 +42,7 @@ pub const BUILTINS: &[Builtin] = &[
         summary: "Show help for a command",
         help: "Run `<name> help <command>` for details.",
         run: help::run,
+        complete: help::complete,
     },
     Builtin {
         name: "init",
@@ -46,6 +50,7 @@ pub const BUILTINS: &[Builtin] = &[
         summary: "Print shell integration",
         help: "Add `eval \"$(<name> init -)\"` to your shell profile.",
         run: init::run,
+        complete: init::complete,
     },
     Builtin {
         name: "new",
@@ -53,6 +58,7 @@ pub const BUILTINS: &[Builtin] = &[
         summary: "Generate a new command",
         help: "Creates a libexec script with front-matter.",
         run: new::run,
+        complete: new::complete,
     },
     Builtin {
         name: "source",
@@ -60,6 +66,7 @@ pub const BUILTINS: &[Builtin] = &[
         summary: "Print a command's source",
         help: "Pages the file with bat/$PAGER/cat.",
         run: source::run,
+        complete: source::complete,
     },
 ];
 
@@ -77,6 +84,19 @@ pub struct Context<'a> {
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
     match BUILTINS.iter().find(|d| d.name == name) {
         Some(doc) => (doc.run)(args, ctx),
+        None => {
+            eprintln!(
+                "{}: built-in `{name}' not implemented yet",
+                ctx.identity.name
+            );
+            1
+        }
+    }
+}
+
+pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
+    match BUILTINS.iter().find(|d| d.name == name) {
+        Some(doc) => (doc.complete)(args, ctx),
         None => {
             eprintln!(
                 "{}: built-in `{name}' not implemented yet",

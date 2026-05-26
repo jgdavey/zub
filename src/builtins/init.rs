@@ -52,6 +52,10 @@ pub fn render_init(ctx: &Context, shell: &str, eval_commands: &[String]) -> Stri
     out
 }
 
+pub fn complete(_args: &[String], _ctx: &Context) -> i32 {
+    0
+}
+
 pub fn run(args: &[String], ctx: &Context) -> i32 {
     let prog = &ctx.identity.name;
     let mut iter = args.iter();
