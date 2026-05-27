@@ -98,12 +98,25 @@ fn terminal_columns() -> usize {
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
-    if args.is_empty() {
-        for name in top_level_names(ctx) {
-            println!("{name}");
+    match dispatch::resolve(args, ctx.index) {
+        Resolution::NotFound => {
+            if args.is_empty() {
+                for name in top_level_names(ctx) {
+                    println!("{name}");
+                }
+                0
+            } else {
+                1
+            }
         }
+        Resolution::Namespace { subcommands, .. } => {
+            for s in subcommands {
+                print!("{s}");
+            }
+            0
+        }
+        Resolution::Builtin { .. } | Resolution::External { .. } => 0,
     }
-    0
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
