@@ -1,9 +1,12 @@
 use crate::builtins;
-use crate::index::{Index, Node, CommandInfo};
+use crate::index::{CommandInfo, Index, Node};
 
 #[derive(Debug, PartialEq)]
 pub enum Resolution<'a> {
-    Builtin(String),
+    Builtin {
+        name: String,
+        builtin: &'a builtins::Builtin,
+    },
     /// An external command, with the number of leading args its (possibly
     /// multi-token) name consumed. The remaining args are passed through.
     External {
@@ -25,15 +28,18 @@ use std::process::Command;
 /// args that matches a command's space-joined name wins. Built-ins are
 /// single-token and authoritative for `args[0]` unless a depth-1 external with
 /// the same name declares `override: true`.
-pub fn resolve<'a>(args: &[String], index: &'a Index) -> Resolution<'a> {
+pub fn resolve<'a>(args: &'a [String], index: &'a Index) -> Resolution<'a> {
     let Some(first) = args.first() else {
         return Resolution::NotFound;
     };
 
-    if builtins::is_builtin(first) {
+    if let Some(builtin) = builtins::get(first) {
         let overriding = index.get(first).is_some_and(|c| c.front.overrides);
         if !overriding {
-            return Resolution::Builtin(first.clone());
+            return Resolution::Builtin {
+                name: first.clone(),
+                builtin,
+            };
         }
     }
 
@@ -61,9 +67,9 @@ pub fn exec_external(name: &str, path: &std::path::Path, args: &[String]) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::frontmatter::FrontMatter;
     use crate::index::CommandInfo;
+    use std::path::PathBuf;
 
     fn cmd(name: &str, overrides: bool) -> CommandInfo {
         CommandInfo {
@@ -135,7 +141,10 @@ mod tests {
     fn reserved_name_resolves_to_builtin() {
         assert_eq!(
             resolve(&args(&["help"]), &index(vec![])),
-            Resolution::Builtin("help".to_string())
+            Resolution::Builtin {
+                name: "help".to_string(),
+                builtin: builtins::get("help").unwrap()
+            }
         );
     }
 
@@ -143,7 +152,10 @@ mod tests {
     fn reserved_name_not_overridden_without_flag() {
         assert_eq!(
             resolve(&args(&["help"]), &index(vec![cmd("help", false)])),
-            Resolution::Builtin("help".to_string())
+            Resolution::Builtin {
+                name: "help".to_string(),
+                builtin: builtins::get("help").unwrap()
+            }
         );
     }
 

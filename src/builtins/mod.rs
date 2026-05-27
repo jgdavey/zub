@@ -10,6 +10,8 @@ pub mod new;
 pub mod source;
 
 /// Documentation and entry point for a built-in command.
+#[allow(unpredictable_function_pointer_comparisons)]
+#[derive(Debug, PartialEq)]
 pub struct Builtin {
     pub name: &'static str,
     pub summary: &'static str,
@@ -70,10 +72,6 @@ pub const BUILTINS: &[Builtin] = &[
     },
 ];
 
-pub fn is_builtin(name: &str) -> bool {
-    BUILTINS.iter().any(|d| d.name == name)
-}
-
 /// Shared context handed to every built-in.
 pub struct Context<'a> {
     pub identity: &'a Identity,
@@ -81,8 +79,16 @@ pub struct Context<'a> {
     pub index: &'a Index,
 }
 
+pub fn get(name: &str) -> Option<&Builtin> {
+    BUILTINS.iter().find(|d| d.name == name)
+}
+
+pub fn is_builtin(name: &str) -> bool {
+    get(name).is_some()
+}
+
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
-    match BUILTINS.iter().find(|d| d.name == name) {
+    match get(name) {
         Some(doc) => (doc.run)(args, ctx),
         None => {
             eprintln!(
@@ -95,7 +101,7 @@ pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
 }
 
 pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
-    match BUILTINS.iter().find(|d| d.name == name) {
+    match get(name) {
         Some(doc) => (doc.complete)(args, ctx),
         None => {
             eprintln!(

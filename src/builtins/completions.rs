@@ -26,19 +26,27 @@ pub enum CompAction {
 /// by the partial word.
 pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
     match dispatch::resolve(settled, ctx.index) {
-        Resolution::Builtin(name) => {
+        Resolution::Builtin { builtin, .. } => {
             let mut args = settled[1..].to_vec();
             args.push(partial.to_string());
-            CompAction::Builtin { name, args }
+            CompAction::Builtin {
+                name: builtin.name.to_string(),
+                args,
+            }
         }
-        Resolution::External { command, consumed, .. } => {
+        Resolution::External {
+            command, consumed, ..
+        } => {
             let completes = command.front.complete;
             if !completes {
                 return CompAction::Fallback;
             }
             let mut args = settled[consumed..].to_vec();
             args.push(partial.to_string());
-            CompAction::Delegate { path: command.path.clone(), args }
+            CompAction::Delegate {
+                path: command.path.clone(),
+                args,
+            }
         }
         Resolution::Namespace { subcommands, .. } => CompAction::Children(subcommands),
         Resolution::NotFound => CompAction::Fallback,

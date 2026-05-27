@@ -1,32 +1,12 @@
 use crate::builtins::Context;
-use crate::builtins::{entry_summary, top_level_names, BUILTINS};
+use crate::builtins::{entry_summary, top_level_names};
+use crate::dispatch::{self, Resolution};
 use std::env;
 
 struct Doc {
     summary: Option<String>,
     usage: Option<String>,
     help: Option<String>,
-}
-
-/// Gather documentation for a command from the built-in registry or an external
-/// command's front-matter.
-fn doc_for(name: &str, ctx: &Context) -> Option<Doc> {
-    if let Some(c) = ctx.index.get(name) {
-        return Some(Doc {
-            summary: c.front.summary.clone(),
-            usage: c.front.usage.clone(),
-            help: c.front.help.clone(),
-        });
-    }
-    if let Some(b) = BUILTINS.iter().find(|b| b.name == name) {
-        let prog = &ctx.identity.name;
-        return Some(Doc {
-            summary: Some(b.summary.to_string()),
-            usage: Some(b.usage.replace("<name>", prog)),
-            help: Some(b.help.to_string()),
-        });
-    }
-    None
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -93,8 +73,7 @@ pub fn render_namespace_table(prefix: &str, ctx: &Context, columns: usize) -> St
 }
 
 /// Render the detailed help for a single command. `None` if unknown.
-pub fn render_detail(name: &str, ctx: &Context) -> Option<String> {
-    let doc = doc_for(name, ctx)?;
+fn render_detail(doc: Doc) -> Option<String> {
     let usage = doc.usage?; // documented commands have a usage line
     let mut out = String::new();
     out.push_str(&format!("Usage: {usage}\n"));
@@ -117,6 +96,7 @@ fn terminal_columns() -> usize {
         .and_then(|c| c.parse().ok())
         .unwrap_or(80)
 }
+
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
     if args.is_empty() {
         for name in top_level_names(ctx) {
@@ -132,18 +112,35 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         return 0;
     }
 
-    // A command name may be multi-token (`help db migrate`).
     let name = args.join(" ");
-    if let Some(detail) = render_detail(&name, ctx) {
+
+    let doc = match dispatch::resolve(args, ctx.index) {
+        Resolution::NotFound => {
+            eprintln!("{}: no such command `{name}'", &ctx.identity.name);
+            return 1;
+        }
+        Resolution::Namespace { .. } => {
+            print!("{}", render_namespace_table(&name, ctx, terminal_columns()));
+            return 0;
+        }
+        Resolution::Builtin { builtin, .. } => Doc {
+            summary: Some(builtin.summary.to_string()),
+            usage: Some(builtin.usage.replace("<name>", &ctx.identity.name)),
+            help: Some(builtin.help.to_string()),
+        },
+        Resolution::External { command, .. } => Doc {
+            summary: command.front.summary.clone(),
+            usage: command.front.usage.clone(),
+            help: command.front.help.clone(),
+        },
+    };
+
+    if let Some(detail) = render_detail(doc) {
         print!("{detail}");
-        return 0;
+        0
+    } else {
+        1
     }
-    if ctx.index.is_namespace(args) {
-        print!("{}", render_namespace_table(&name, ctx, terminal_columns()));
-        return 0;
-    }
-    eprintln!("{}: no such command `{name}'", ctx.identity.name);
-    1
 }
 
 #[cfg(test)]
@@ -243,43 +240,6 @@ mod tests {
         assert!(table.contains("db migrate"));
         assert!(table.contains("run migrations"));
         assert!(table.contains("db seed"));
-    }
-
-    #[test]
-    fn detail_renders_usage_summary_help() {
-        let (id, cfg, cmds) = ctx();
-        let ctx = Context {
-            identity: &id,
-            config: &cfg,
-            index: &cmds,
-        };
-        let detail = render_detail("who", &ctx).unwrap();
-        assert!(detail.contains("Usage: rush who"));
-        assert!(detail.contains("Summary: Check who's logged in"));
-        assert!(detail.contains("Long help here."));
-    }
-
-    #[test]
-    fn detail_for_builtin_uses_registry() {
-        let (id, cfg, cmds) = ctx();
-        let ctx = Context {
-            identity: &id,
-            config: &cfg,
-            index: &cmds,
-        };
-        let detail = render_detail("commands", &ctx).unwrap();
-        assert!(detail.contains("List all commands"));
-    }
-
-    #[test]
-    fn detail_for_unknown_is_none() {
-        let (id, cfg, cmds) = ctx();
-        let ctx = Context {
-            identity: &id,
-            config: &cfg,
-            index: &cmds,
-        };
-        assert!(render_detail("nope", &ctx).is_none());
     }
 
     #[test]

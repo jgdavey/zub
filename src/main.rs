@@ -67,10 +67,10 @@ fn main() {
     }
 
     match dispatch::resolve(&rest, &index) {
-        Resolution::Builtin(name) => exit(builtins::run(&name, &rest[1..], &ctx)),
-        Resolution::External { command, consumed, ..} => {
-            dispatch::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..])
-        }
+        Resolution::Builtin { builtin, .. } => exit((builtin.run)(&rest[1..], &ctx)),
+        Resolution::External {
+            command, consumed, ..
+        } => dispatch::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..]),
         Resolution::Namespace { .. } => {
             exit(builtins::run("help", &rest, &ctx));
         }
