@@ -91,7 +91,7 @@ impl Index {
 
     /// Whether `name` is a namespace (a branch).
     pub fn is_namespace<S: AsRef<str>>(&self, args: &[S]) -> bool {
-        match self.node(&args) {
+        match self.node(args) {
             Some((_, node)) => node.is_namespace(),
             _ => false,
         }

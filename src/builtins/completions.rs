@@ -20,15 +20,12 @@ pub enum CompAction {
     Fallback,
 }
 
-/// Decide how to complete, given the settled tokens (everything before the
-/// word being typed) and the `partial` word itself. The resulting `args` are
-/// what to pass after `--complete`: the command's own remaining args followed
-/// by the partial word.
-pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
+/// Decide how to complete, given the settled tokens (everything before the cursor)
+// The partial here is for future potential use
+pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> CompAction {
     match dispatch::resolve(settled, ctx.index) {
         Resolution::Builtin { builtin, .. } => {
-            let mut args = settled[1..].to_vec();
-            args.push(partial.to_string());
+            let args = settled[1..].to_vec();
             CompAction::Builtin {
                 name: builtin.name.to_string(),
                 args,
@@ -41,8 +38,7 @@ pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
             if !completes {
                 return CompAction::Fallback;
             }
-            let mut args = settled[consumed..].to_vec();
-            args.push(partial.to_string());
+            let args = settled[consumed..].to_vec();
             CompAction::Delegate {
                 path: command.path.clone(),
                 args,
@@ -70,9 +66,9 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         return 1;
     }
 
-    // The shell always includes the word being completed as the final arg
-    // (empty when starting fresh). Everything before it is settled.
-    let (partial, settled) = args.split_last().unwrap();
+    let settled = args;
+    // The currently completing word. This can be empty if at a blank spot
+    let partial = env::var("COMP_WORD").ok().filter(|s| !s.is_empty());
 
     match plan(settled, partial, ctx) {
         CompAction::Builtin { name, args } => builtins::complete(&name, &args, ctx),
@@ -160,12 +156,12 @@ mod tests {
     fn plan_delegates_to_leaf_command_args() {
         let cmds = ctx_cmds(&[("who", true)]);
         with_ctx(&cmds, |ctx| {
-            let action = plan(&["who".to_string()], "", ctx);
+            let action = plan(&["who".to_string()], None, ctx);
             assert_eq!(
                 action,
                 CompAction::Delegate {
                     path: PathBuf::from("/lx/who"),
-                    args: vec!["".to_string()],
+                    args: vec![],
                 }
             );
         });
@@ -175,7 +171,7 @@ mod tests {
     fn plan_offers_namespace_children() {
         let cmds = ctx_cmds(&[("db migrate", false), ("db seed", false)]);
         with_ctx(&cmds, |ctx| {
-            let action = plan(&["db".to_string()], "", ctx);
+            let action = plan(&["db".to_string()], None, ctx);
             assert_eq!(
                 action,
                 CompAction::Children(vec!["migrate".to_string(), "seed".to_string()])
@@ -187,7 +183,11 @@ mod tests {
     fn plan_delegates_nested_leaf_with_remaining_args() {
         let cmds = ctx_cmds(&[("db migrate", true)]);
         with_ctx(&cmds, |ctx| {
-            let action = plan(&["db".to_string(), "migrate".to_string()], "--f", ctx);
+            let action = plan(
+                &["db".to_string(), "migrate".to_string(), "--f".to_string()],
+                None,
+                ctx,
+            );
             assert_eq!(
                 action,
                 CompAction::Delegate {
@@ -202,7 +202,7 @@ mod tests {
     fn plan_builtin_passes_remaining_and_partial() {
         let cmds = ctx_cmds(&[]);
         with_ctx(&cmds, |ctx| {
-            let action = plan(&["commands".to_string()], "--e", ctx);
+            let action = plan(&["commands".to_string(), "--e".to_string()], None, ctx);
             assert_eq!(
                 action,
                 CompAction::Builtin {
@@ -217,7 +217,7 @@ mod tests {
     fn plan_non_completing_leaf_falls_back() {
         let cmds = ctx_cmds(&[("who", false)]);
         with_ctx(&cmds, |ctx| {
-            assert_eq!(plan(&["who".to_string()], "", ctx), CompAction::Fallback);
+            assert_eq!(plan(&["who".to_string()], None, ctx), CompAction::Fallback);
         });
     }
 
@@ -225,7 +225,10 @@ mod tests {
     fn plan_unknown_falls_back() {
         let cmds = ctx_cmds(&[]);
         with_ctx(&cmds, |ctx| {
-            assert_eq!(plan(&["bogus".to_string()], "", ctx), CompAction::Fallback);
+            assert_eq!(
+                plan(&["bogus".to_string()], None, ctx),
+                CompAction::Fallback
+            );
         });
     }
 }
