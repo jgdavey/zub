@@ -246,8 +246,11 @@ defines a shell function that runs `zub -C <your config>` under the hood.
 - [x] Provide a script to convert script headers from old to new format
 - [x] Bring completion scripts over during scaffold
 - [x] Add an example script (bash?) during scaffold
+- [x] Handle namespaced commands
+- [ ] scaffold: overwrite existing
 - [ ] Cache indexed commands (if perf becomes an issue)
 - [ ] Document how to do completion
+- [ ] static completion in front-matter?
 - [ ] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
 
 ## License
