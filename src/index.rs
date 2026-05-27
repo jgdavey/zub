@@ -75,7 +75,7 @@ impl Index {
 
     /// Strict navigation: walk `args` exactly, rejecting trailing tokens past a
     /// leaf. (Greedy `resolve` filtered to require every token consumed.)
-    pub fn node(&self, args: &[&str]) -> Option<(usize, &Node)> {
+    pub fn node<S: AsRef<str>>(&self, args: &[S]) -> Option<(usize, &Node)> {
         self.resolve(args).filter(|(c, _)| *c == args.len())
     }
 
@@ -90,8 +90,7 @@ impl Index {
     }
 
     /// Whether `name` is a namespace (a branch).
-    pub fn is_namespace(&self, name: &str) -> bool {
-        let args: Vec<_> = name.split(' ').collect();
+    pub fn is_namespace<S: AsRef<str>>(&self, args: &[S]) -> bool {
         match self.node(&args) {
             Some((_, node)) => node.is_namespace(),
             _ => false,
@@ -291,7 +290,7 @@ mod tests {
         write_exec(root.path(), "db/seed", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), None));
         assert!(index.get("db migrate").is_some());
-        assert!(index.is_namespace("db"));
+        assert!(index.is_namespace(&["db"]));
         assert_eq!(index.children("db"), vec!["migrate", "seed"]);
     }
 
@@ -318,7 +317,7 @@ mod tests {
             index.get("db").unwrap().front.summary.as_deref(),
             Some("local-db")
         );
-        assert!(!index.is_namespace("db")); // root's db/migrate was dropped
+        assert!(!index.is_namespace(&["db"])); // root's db/migrate was dropped
         assert!(index.get("db migrate").is_none());
     }
 
@@ -368,8 +367,8 @@ mod tests {
         assert_eq!(index.children("db"), vec!["migrate", "schema", "seed"]);
         assert_eq!(index.children("db schema"), vec!["dump"]);
         assert_eq!(index.top_level(), vec!["db", "who"]);
-        assert!(index.is_namespace("db"));
-        assert!(!index.is_namespace("who"));
+        assert!(index.is_namespace(&["db"]));
+        assert!(!index.is_namespace(&["who"]));
     }
 
     #[test]

@@ -1,14 +1,13 @@
 use crate::builtins;
-use crate::index::{Index, Node};
-use std::path::PathBuf;
+use crate::index::{Index, Node, CommandInfo};
 
 #[derive(Debug, PartialEq)]
-pub enum Resolution {
+pub enum Resolution<'a> {
     Builtin(String),
     /// An external command, with the number of leading args its (possibly
     /// multi-token) name consumed. The remaining args are passed through.
     External {
-        path: PathBuf,
+        command: &'a CommandInfo,
         consumed: usize,
     },
     Namespace {
@@ -26,7 +25,7 @@ use std::process::Command;
 /// args that matches a command's space-joined name wins. Built-ins are
 /// single-token and authoritative for `args[0]` unless a depth-1 external with
 /// the same name declares `override: true`.
-pub fn resolve(args: &[String], index: &Index) -> Resolution {
+pub fn resolve<'a>(args: &[String], index: &'a Index) -> Resolution<'a> {
     let Some(first) = args.first() else {
         return Resolution::NotFound;
     };
@@ -40,7 +39,7 @@ pub fn resolve(args: &[String], index: &Index) -> Resolution {
 
     match index.resolve(args) {
         Some((consumed, Node::Leaf(c))) => Resolution::External {
-            path: c.path.clone(),
+            command: c,
             consumed,
         },
         Some((consumed, node @ Node::Branch(_))) => Resolution::Namespace {
@@ -62,6 +61,7 @@ pub fn exec_external(name: &str, path: &std::path::Path, args: &[String]) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use crate::frontmatter::FrontMatter;
     use crate::index::CommandInfo;
 
@@ -87,10 +87,11 @@ mod tests {
 
     #[test]
     fn external_command_resolves_with_one_token_consumed() {
+        let command = cmd("who", false);
         assert_eq!(
-            resolve(&args(&["who"]), &index(vec![cmd("who", false)])),
+            resolve(&args(&["who"]), &index(vec![command.clone()])),
             Resolution::External {
-                path: PathBuf::from("/libexec/who"),
+                command: &command,
                 consumed: 1,
             }
         );
@@ -98,13 +99,14 @@ mod tests {
 
     #[test]
     fn nested_command_consumes_its_tokens_and_passes_rest() {
+        let command = cmd("db migrate", false);
         assert_eq!(
             resolve(
                 &args(&["db", "migrate", "--force"]),
-                &index(vec![cmd("db migrate", false)])
+                &index(vec![command.clone()])
             ),
             Resolution::External {
-                path: PathBuf::from("/libexec/db/migrate"),
+                command: &command,
                 consumed: 2,
             }
         );
@@ -147,10 +149,11 @@ mod tests {
 
     #[test]
     fn reserved_name_overridden_with_flag() {
+        let command = cmd("help", true);
         assert_eq!(
-            resolve(&args(&["help"]), &index(vec![cmd("help", true)])),
+            resolve(&args(&["help"]), &index(vec![command.clone()])),
             Resolution::External {
-                path: PathBuf::from("/libexec/help"),
+                command: &command,
                 consumed: 1,
             }
         );

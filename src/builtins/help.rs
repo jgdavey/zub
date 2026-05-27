@@ -138,7 +138,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         print!("{detail}");
         return 0;
     }
-    if ctx.index.is_namespace(&name) {
+    if ctx.index.is_namespace(args) {
         print!("{}", render_namespace_table(&name, ctx, terminal_columns()));
         return 0;
     }

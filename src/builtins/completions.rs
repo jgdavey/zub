@@ -31,18 +31,14 @@ pub fn plan(settled: &[String], partial: &str, ctx: &Context) -> CompAction {
             args.push(partial.to_string());
             CompAction::Builtin { name, args }
         }
-        Resolution::External { path, consumed } => {
-            let completes = ctx
-                .index
-                .get(&settled[..consumed].join(" "))
-                .map(|c| c.front.complete)
-                .unwrap_or(false);
+        Resolution::External { command, consumed, .. } => {
+            let completes = command.front.complete;
             if !completes {
                 return CompAction::Fallback;
             }
             let mut args = settled[consumed..].to_vec();
             args.push(partial.to_string());
-            CompAction::Delegate { path, args }
+            CompAction::Delegate { path: command.path.clone(), args }
         }
         Resolution::Namespace { subcommands, .. } => CompAction::Children(subcommands),
         Resolution::NotFound => CompAction::Fallback,
