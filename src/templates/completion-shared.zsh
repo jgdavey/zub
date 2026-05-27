@@ -19,7 +19,8 @@ _zub() {
       comps="$(_call_program ${prog}-cmds $prog completions --commands)"
       ;;
     args)
-      comps="$(_call_program ${prog}-args $prog completions $line[@])"
+      subcommand="$line[1]"
+      comps="$(_call_program ${prog}-${subcommand}-args $prog completions "${line[1,-2]}")"
       has="$?"
       ;;
   esac

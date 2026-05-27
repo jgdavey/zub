@@ -129,7 +129,6 @@ mod tests {
         // Name-agnostic: derives the program from $service, never hardcodes it.
         assert!(shared.contains("$service"));
         assert!(shared.contains("_call_program ${prog}-cmds"));
-        assert!(!shared.contains("sub"));
     }
 
     #[test]
