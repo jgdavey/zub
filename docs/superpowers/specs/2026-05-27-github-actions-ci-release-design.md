@@ -46,7 +46,15 @@ Strips the leading `v` from `github.ref_name` and compares it to the
 parsed with `jq`). Fails the whole workflow on mismatch, so a tag can never
 publish binaries whose embedded `CARGO_PKG_VERSION` disagrees with the tag.
 
-### Job `build` (needs: verify)
+### Job `create-release` (needs: verify)
+
+Creates the GitHub Release for the tag **once**, as a **draft**, with
+`gh release create "$TAG" --draft --generate-notes`. Doing this in a single
+job (rather than letting each build leg create-or-append) means release notes
+are generated exactly once and there is no create race across the matrix. The
+step is idempotent on re-runs (`gh release view` guard).
+
+### Job `build` (needs: create-release)
 
 Matrix of four legs, each emitting one tarball + one checksum file:
 
@@ -78,10 +86,18 @@ resolution finds `zub` directly. The full target triple in the filename is what
 
 ### Publishing
 
-`softprops/action-gh-release@v2`, run per leg, uploads that leg's `.tar.gz` and
-`.tar.gz.sha256` to the release for the tag (the action creates the release on
-first upload and appends on subsequent ones). `generate_release_notes: true`
-(there is no CHANGELOG to draw from).
+Each build leg uploads its `.tar.gz` and `.tar.gz.sha256` into the existing
+draft release with `gh release upload "$TAG" … --clobber` (`--clobber` makes a
+re-run idempotent). The draft is never public during the build.
+
+### Job `publish` (needs: build)
+
+After every build leg succeeds, flips the release out of draft with
+`gh release edit "$TAG" --draft=false`. Because it `needs: build`, a failure in
+any leg skips publishing and leaves a draft with partial assets — nothing
+half-public is ever released. Release operations use the preinstalled `gh` CLI
+(`GH_TOKEN`/`GH_REPO` set at the workflow level) rather than a third-party
+action.
 
 ## Install documentation (README)
 
