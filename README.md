@@ -232,12 +232,23 @@ touched.
 ## Install zub and your program
 
 First, make the shared `zub` binary (and `zub-scaffold`) available on your
-`PATH`. From this repo:
+`PATH`. The easiest way is [`mise`](https://mise.jdx.dev/), which pulls a
+prebuilt binary from the GitHub releases:
+
+    mise use -g 'ubi:jgdavey/sub[exe=zub]'
+
+Or grab a release tarball directly (one per platform — `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`)
+and drop both binaries on your `PATH`:
+
+    curl -L https://github.com/jgdavey/sub/releases/download/v0.1.0/zub-0.1.0-<target>.tar.gz \
+      | tar xz && mv zub zub-scaffold ~/.local/bin/
+
+Or build from this repo:
 
     cargo install --path .
 
-…or copy `target/release/zub` and `target/release/zub-scaffold` somewhere on your
-`PATH`.
+…which puts `zub` and `zub-scaffold` in `~/.cargo/bin`.
 
 Then load your program in your shell. Say your program lives at `$HOME/.rush`:
 
