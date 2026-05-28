@@ -116,20 +116,20 @@ mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
-    use crate::index::{CommandInfo, Index};
+    use crate::index::{self, Index};
     use std::path::PathBuf;
 
     fn ctx_cmds(specs: &[(&str, bool)]) -> Index {
         let cmds = specs
             .iter()
-            .map(|(name, complete)| CommandInfo {
-                name: name.to_string(),
-                path: PathBuf::from(format!("/lx/{}", name.replace(' ', "/"))),
-                front: FrontMatter {
-                    complete: *complete,
-                    ..Default::default()
-                },
-                is_local: false,
+            .map(|(name, complete)| {
+                index::leaf(
+                    name,
+                    FrontMatter {
+                        complete: *complete,
+                        ..Default::default()
+                    },
+                )
             })
             .collect();
         Index::from_leaves(cmds)
@@ -157,7 +157,7 @@ mod tests {
             assert_eq!(
                 action,
                 CompAction::Delegate {
-                    path: PathBuf::from("/lx/who"),
+                    path: PathBuf::from("/libexec/who"),
                     args: vec![],
                 }
             );
@@ -188,7 +188,7 @@ mod tests {
             assert_eq!(
                 action,
                 CompAction::Delegate {
-                    path: PathBuf::from("/lx/db/migrate"),
+                    path: PathBuf::from("/libexec/db/migrate"),
                     args: vec!["--f".to_string()],
                 }
             );

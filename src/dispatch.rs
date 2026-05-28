@@ -65,18 +65,15 @@ mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
     use crate::index::CommandInfo;
-    use std::path::PathBuf;
 
     fn cmd(name: &str, overrides: bool) -> CommandInfo {
-        CommandInfo {
-            name: name.to_string(),
-            path: PathBuf::from(format!("/libexec/{}", name.replace(' ', "/"))),
-            front: FrontMatter {
+        crate::index::leaf(
+            name,
+            FrontMatter {
                 overrides,
                 ..Default::default()
             },
-            is_local: false,
-        }
+        )
     }
 
     fn args(s: &[&str]) -> Vec<String> {

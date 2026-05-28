@@ -133,6 +133,32 @@ impl Index {
     }
 }
 
+/// Test helper: a leaf `CommandInfo` for `name` (space-joined) carrying `front`.
+/// The path is synthesized — its exact value is irrelevant to the tests that
+/// use this — and `is_local` is false. Shared across the crate's test modules
+/// so they don't each re-spell the same boilerplate.
+#[cfg(test)]
+pub(crate) fn leaf(name: &str, front: FrontMatter) -> CommandInfo {
+    CommandInfo {
+        name: name.to_string(),
+        path: PathBuf::from(format!("/libexec/{}", name.replace(' ', "/"))),
+        front,
+        is_local: false,
+    }
+}
+
+/// Test helper: an `Index` built from space-joined `names`, each a leaf with
+/// default front-matter.
+#[cfg(test)]
+pub(crate) fn index_of(names: &[&str]) -> Index {
+    Index::from_leaves(
+        names
+            .iter()
+            .map(|n| leaf(n, FrontMatter::default()))
+            .collect(),
+    )
+}
+
 fn collect_leaves<'a>(branch: &'a BTreeMap<String, Node>, out: &mut Vec<&'a CommandInfo>) {
     for node in branch.values() {
         match node {
@@ -253,22 +279,6 @@ mod tests {
         }
     }
 
-    /// Build an Index directly from space-joined names (no filesystem).
-    fn build(names: &[&str]) -> Index {
-        let mut root = BTreeMap::new();
-        for n in names {
-            let comps: Vec<String> = n.split(' ').map(String::from).collect();
-            let info = CommandInfo {
-                name: n.to_string(),
-                path: PathBuf::from(format!("/lx/{}", n.replace(' ', "/"))),
-                front: FrontMatter::default(),
-                is_local: false,
-            };
-            insert(&mut root, &comps, info);
-        }
-        Index(root)
-    }
-
     #[test]
     fn discover_lists_leaves_with_metadata() {
         let root = tempdir().unwrap();
@@ -336,7 +346,7 @@ mod tests {
 
     #[test]
     fn resolve_greedy_returns_deepest_leaf_and_consumed() {
-        let index = build(&["db migrate"]);
+        let index = index_of(&["db migrate"]);
         let args: Vec<String> = ["db", "migrate", "--force"]
             .iter()
             .map(|s| s.to_string())
@@ -352,7 +362,7 @@ mod tests {
 
     #[test]
     fn resolve_namespace_prefix_returns_branch() {
-        let index = build(&["db migrate"]);
+        let index = index_of(&["db migrate"]);
         let (consumed, node) = index.resolve(&["db".to_string()]).unwrap();
         assert_eq!(consumed, 1);
         assert!(node.is_namespace());
@@ -361,7 +371,7 @@ mod tests {
 
     #[test]
     fn get_children_top_level_and_namespace() {
-        let index = build(&["who", "db migrate", "db seed", "db schema dump"]);
+        let index = index_of(&["who", "db migrate", "db seed", "db schema dump"]);
         assert!(index.get("who").is_some());
         assert!(index.get("db").is_none()); // a namespace, not a leaf
         assert_eq!(index.children("db"), vec!["migrate", "schema", "seed"]);
@@ -373,7 +383,7 @@ mod tests {
 
     #[test]
     fn leaves_are_sorted_by_full_name() {
-        let index = build(&["who", "db seed", "db migrate"]);
+        let index = index_of(&["who", "db seed", "db migrate"]);
         let names: Vec<&str> = index.leaves().iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["db migrate", "db seed", "who"]);
     }

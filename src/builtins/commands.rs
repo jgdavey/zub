@@ -47,7 +47,7 @@ mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
-    use crate::index::{CommandInfo, Index};
+    use crate::index::{self, Index};
     use std::path::PathBuf;
 
     fn ctx_with(names: &[&str]) -> (Identity, Index) {
@@ -64,14 +64,14 @@ mod tests {
         };
         let cmds = cmds
             .iter()
-            .map(|(n, eval)| CommandInfo {
-                name: n.to_string(),
-                path: PathBuf::from(format!("/r/libexec/{}", n.replace(' ', "/"))),
-                front: FrontMatter {
-                    eval: *eval,
-                    ..Default::default()
-                },
-                is_local: false,
+            .map(|(n, eval)| {
+                index::leaf(
+                    n,
+                    FrontMatter {
+                        eval: *eval,
+                        ..Default::default()
+                    },
+                )
             })
             .collect();
         (id, Index::from_leaves(cmds))

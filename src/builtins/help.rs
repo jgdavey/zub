@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
-    use crate::index::{CommandInfo, Index};
+    use crate::index::{self, Index};
     use std::path::PathBuf;
 
     fn ctx() -> (Identity, Index) {
@@ -171,17 +171,15 @@ mod tests {
             local_root: None,
             config_path: PathBuf::new(),
         };
-        let cmds = vec![CommandInfo {
-            name: "who".into(),
-            path: PathBuf::from("/r/libexec/who"),
-            front: FrontMatter {
+        let cmds = vec![index::leaf(
+            "who",
+            FrontMatter {
                 summary: Some("Check who's logged in".into()),
                 usage: Some("rush who".into()),
                 help: Some("Long help here.".into()),
                 ..Default::default()
             },
-            is_local: false,
-        }];
+        )];
         (id, Index::from_leaves(cmds))
     }
 
@@ -194,15 +192,15 @@ mod tests {
         };
         let cmds = specs
             .iter()
-            .map(|(name, summary)| CommandInfo {
-                name: name.to_string(),
-                path: PathBuf::from(format!("/r/libexec/{}", name.replace(' ', "/"))),
-                front: FrontMatter {
-                    summary: summary.map(String::from),
-                    usage: Some(format!("rush {name}")),
-                    ..Default::default()
-                },
-                is_local: false,
+            .map(|(name, summary)| {
+                index::leaf(
+                    name,
+                    FrontMatter {
+                        summary: summary.map(String::from),
+                        usage: Some(format!("rush {name}")),
+                        ..Default::default()
+                    },
+                )
             })
             .collect();
         (id, Index::from_leaves(cmds))
