@@ -23,9 +23,11 @@ pub struct Builtin {
 pub const BUILTINS: &[Builtin] = &[
     Builtin {
         name: "commands",
-        usage: "<name> commands",
+        usage: "<name> commands [--eval | --no-eval]",
         summary: "List all commands",
-        help: "Mostly used for completion and `help`.",
+        help: "Lists every command, one per line. `--eval`/`--no-eval` restrict \
+               to (or exclude) commands whose front-matter sets `eval: true`. \
+               Used by `init` to build the eval wrapper.",
         run: commands::run,
         complete: commands::complete,
     },
