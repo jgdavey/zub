@@ -53,7 +53,7 @@ A command whose front-matter sets `eval: true` is a shell-eval command (its stdo
 
 ### Scaffolding (`scaffold.rs` + `bin/zub-scaffold.rs`)
 
-`scaffold::create_program(target, name)` bootstraps a new program tree: `zub.yml`, a self-locating `bin/<name>` shim (re-execs `zub -C <root>/zub.yml`), the completion scripts (`completions/_zub` shared + `_<name>` + `<name>.bash`), and an example `libexec/who` command (front-matter + `--complete` branch + forwards to system `who`). `bin/zub-scaffold.rs` is a thin `main` over it.
+`scaffold::create_program(target, name, mode, confirm)` bootstraps a new program tree: `zub.yml`, a self-locating `bin/<name>` shim (re-execs `zub -C <root>/zub.yml`), the completion scripts (`completions/_zub` shared + `_<name>` + `<name>.bash`), and an example `libexec/who` command (front-matter + `--complete` branch + forwards to system `who`). `bin/zub-scaffold.rs` is a thin `main` over it. The `Mode` arg controls how pre-existing *generated* files are handled (the user's own `libexec` commands and `share` contents are never touched): `Normal` refuses if the target dir exists (the default, `zub-scaffold <name>`); `Regenerate` (`--regenerate`) rewrites them, calling `confirm` before replacing any that already exist and writing missing ones silently; `Clobber` (`--regenerate=clobber`) replaces them unconditionally. A private `write_generated` helper centralizes the exists/prompt/overwrite decision; the binary's `confirm` is a stdin `[y/N]` prompt.
 
 ### Scaffold templates (`src/templates/`)
 

@@ -212,9 +212,22 @@ Use the `zub-scaffold` tool to generate a fresh program tree:
     zub-scaffold rush
 
 This creates a `rush/` directory containing a `zub.yml` (with `name: rush`), a
-self-locating `bin/rush` shim, and empty `libexec`, `completions`, and `share`
-directories. There's no source-templating or build step — your program's
-identity comes entirely from `zub.yml`. (Give it a better name than `rush`!)
+self-locating `bin/rush` shim, the completion scripts, an example `libexec/who`
+command, and an empty `share` directory. There's no source-templating or build
+step — your program's identity comes entirely from `zub.yml`. (Give it a better
+name than `rush`!)
+
+By default `zub-scaffold` refuses to touch an existing directory. To refresh the
+generated files of a program you already have — after upgrading `zub`, say — run
+it with `--regenerate` from the program's **parent** directory:
+
+    zub-scaffold rush --regenerate            # ask before replacing each existing file
+    zub-scaffold rush --regenerate=clobber    # replace them all, no prompts
+
+Regeneration only ever rewrites the files `zub-scaffold` generates (`zub.yml`,
+`bin/rush`, the completion scripts, and the example `libexec/who`); missing ones
+are written silently. Your own `libexec` commands and `share` contents are never
+touched.
 
 ## Install zub and your program
 
@@ -247,7 +260,7 @@ defines a shell function that runs `zub -C <your config>` under the hood.
 - [x] Bring completion scripts over during scaffold
 - [x] Add an example script (bash?) during scaffold
 - [x] Handle namespaced commands
-- [ ] scaffold: overwrite existing
+- [x] scaffold: overwrite existing
 - [ ] Cache indexed commands (if perf becomes an issue)
 - [ ] Document how to do completion
 - [ ] static completion in front-matter?
