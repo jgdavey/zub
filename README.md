@@ -1,6 +1,8 @@
-# zub: a delicious way to organize programs
+# zub: organize zubprogramz
 
 Zub is a model for setting up shell programs that use subcommands, like `git` or `rbenv`. Building a zub program does not require you to write shell scripts in bash — you can write subcommands in any scripting language you prefer.
+
+Zub started as a fork of `qrush/sub`, but has diverged enough that a new name and repo felt warranted.
 
 A zub program is run at the command line using this style:
 
@@ -272,11 +274,11 @@ defines a shell function that runs `zub -C <your config>` under the hood.
 - [x] Add an example script (bash?) during scaffold
 - [x] Handle namespaced commands
 - [x] scaffold: overwrite existing
+- [x] Set up CI building
 - [ ] Cache indexed commands (if perf becomes an issue)
 - [ ] Document how to do completion
 - [ ] static completion in front-matter?
 - [ ] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
-- [ ] Set up CI building
 
 ## License
 
