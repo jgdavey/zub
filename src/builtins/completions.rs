@@ -114,7 +114,6 @@ fn print_summaries(ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
     use crate::index::{CommandInfo, Index};
@@ -143,10 +142,8 @@ mod tests {
             local_root: None,
             config_path: PathBuf::new(),
         };
-        let cfg: Option<Config> = None;
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index,
         };
         f(&ctx)

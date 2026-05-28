@@ -265,6 +265,7 @@ defines a shell function that runs `zub -C <your config>` under the hood.
 - [ ] Document how to do completion
 - [ ] static completion in front-matter?
 - [ ] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
+- [ ] Set up CI building
 
 ## License
 

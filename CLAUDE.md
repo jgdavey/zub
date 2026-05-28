@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `zub` lets you build a multi-command CLI (like `git` or `rbenv`) where each subcommand is a standalone executable in any language. A "zub program" is a directory tree — `bin/<name>`, `libexec/` (one executable per command; subdirectories become git-style nested subcommands), `completions/`, `share/`, plus a `zub.yml` config — and one shared Rust binary acts as the dispatcher and all built-ins. The binary is told *which* program it is by a config-file path (`-C/--config <path>`, else `$ZUB_CONFIG`); the config is the single source of truth for `name` and `root`. There is no per-program build step or source-templating.
 
-This branch is mid-rewrite: the historical bash core (`libexec/sub*`, `bin/sub`, `prepare.sh`, `regenerate.sh`) still ships, but the Rust crate in `src/` is the active implementation. It builds two binaries: `zub` (dispatch + built-ins) and `zub-scaffold` (bootstraps a new program tree). The design and task-by-task plan live in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
+The Rust crate in `src/` is the implementation; the historical bash core has been removed. It builds two binaries: `zub` (dispatch + built-ins) and `zub-scaffold` (bootstraps a new program tree). The only non-Rust artifact is `migrate-frontmatter` (a one-shot Python converter, documented below). The design and task-by-task plans live in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
 ## Commands
 

@@ -159,13 +159,12 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
     use crate::index::{CommandInfo, Index};
     use std::path::PathBuf;
 
-    fn ctx() -> (Identity, Option<Config>, Index) {
+    fn ctx() -> (Identity, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
@@ -183,10 +182,10 @@ mod tests {
             },
             is_local: false,
         }];
-        (id, None, Index::from_leaves(cmds))
+        (id, Index::from_leaves(cmds))
     }
 
-    fn ctx_named(specs: &[(&str, Option<&str>)]) -> (Identity, Option<Config>, Index) {
+    fn ctx_named(specs: &[(&str, Option<&str>)]) -> (Identity, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
@@ -206,15 +205,14 @@ mod tests {
                 is_local: false,
             })
             .collect();
-        (id, None, Index::from_leaves(cmds))
+        (id, Index::from_leaves(cmds))
     }
 
     #[test]
     fn table_lists_commands_with_summaries() {
-        let (id, cfg, cmds) = ctx();
+        let (id, cmds) = ctx();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let table = render_table(&ctx, 80);
@@ -225,10 +223,9 @@ mod tests {
 
     #[test]
     fn table_lists_namespace_with_synthetic_summary() {
-        let (id, cfg, cmds) = ctx_named(&[("db migrate", Some("m")), ("db seed", Some("s"))]);
+        let (id, cmds) = ctx_named(&[("db migrate", Some("m")), ("db seed", Some("s"))]);
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let table = render_table(&ctx, 80);
@@ -240,13 +237,12 @@ mod tests {
 
     #[test]
     fn namespace_table_lists_children_full_names() {
-        let (id, cfg, cmds) = ctx_named(&[
+        let (id, cmds) = ctx_named(&[
             ("db migrate", Some("run migrations")),
             ("db seed", Some("seed it")),
         ]);
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let table = render_namespace_table("db", &ctx, 80);

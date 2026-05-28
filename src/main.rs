@@ -51,11 +51,9 @@ fn main() {
     env_setup::apply(&identity);
 
     let index = index::discover(&identity);
-    let config = Some(config);
 
     let ctx = Context {
         identity: &identity,
-        config: &config,
         index: &index,
     };
 
@@ -67,7 +65,7 @@ fn main() {
     }
 
     match dispatch::resolve(&rest, &index) {
-        Resolution::Builtin { builtin, .. } => exit((builtin.run)(&rest[1..], &ctx)),
+        Resolution::Builtin { builtin } => exit((builtin.run)(&rest[1..], &ctx)),
         Resolution::External {
             command, consumed, ..
         } => dispatch::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..]),

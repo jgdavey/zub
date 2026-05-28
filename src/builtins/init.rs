@@ -99,27 +99,25 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::identity::Identity;
     use crate::index::Index;
     use std::path::PathBuf;
 
-    fn ctx() -> (Identity, Option<Config>, Index) {
+    fn ctx() -> (Identity, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
             local_root: None,
             config_path: PathBuf::from("/opt/rush/zub.yml"),
         };
-        (id, None, Index::default())
+        (id, Index::default())
     }
 
     #[test]
     fn exports_root_and_path() {
-        let (id, cfg, cmds) = ctx();
+        let (id, cmds) = ctx();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let script = render_init(&ctx, "bash", &[]);
@@ -128,10 +126,9 @@ mod tests {
 
     #[test]
     fn bash_emits_completion_source_and_alias() {
-        let (id, cfg, cmds) = ctx();
+        let (id, cmds) = ctx();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let script = render_init(&ctx, "bash", &[]);
@@ -141,10 +138,9 @@ mod tests {
 
     #[test]
     fn zsh_emits_fpath_and_function() {
-        let (id, cfg, cmds) = ctx();
+        let (id, cmds) = ctx();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let script = render_init(&ctx, "zsh", &[]);
@@ -154,10 +150,9 @@ mod tests {
 
     #[test]
     fn eval_wrapper_lists_eval_commands() {
-        let (id, cfg, cmds) = ctx();
+        let (id, cmds) = ctx();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let script = render_init(&ctx, "bash", &["cd".to_string(), "push".to_string()]);
@@ -166,10 +161,9 @@ mod tests {
 
     #[test]
     fn wrapper_evals_command_without_sh_prefix() {
-        let (id, cfg, cmds) = ctx();
+        let (id, cmds) = ctx();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let script = render_init(&ctx, "bash", &["cd".to_string()]);

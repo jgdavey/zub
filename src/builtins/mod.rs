@@ -1,4 +1,3 @@
-use crate::config::Config;
 use crate::identity::Identity;
 use crate::index::Index;
 
@@ -75,7 +74,6 @@ pub const BUILTINS: &[Builtin] = &[
 /// Shared context handed to every built-in.
 pub struct Context<'a> {
     pub identity: &'a Identity,
-    pub config: &'a Option<Config>,
     pub index: &'a Index,
 }
 

@@ -45,18 +45,17 @@ pub fn complete(args: &[String], _ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::frontmatter::FrontMatter;
     use crate::identity::Identity;
     use crate::index::{CommandInfo, Index};
     use std::path::PathBuf;
 
-    fn ctx_with(names: &[&str]) -> (Identity, Option<Config>, Index) {
+    fn ctx_with(names: &[&str]) -> (Identity, Index) {
         let pairs: Vec<(&str, bool)> = names.iter().map(|n| (*n, false)).collect();
         ctx_with_eval(&pairs)
     }
 
-    fn ctx_with_eval(cmds: &[(&str, bool)]) -> (Identity, Option<Config>, Index) {
+    fn ctx_with_eval(cmds: &[(&str, bool)]) -> (Identity, Index) {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
@@ -75,15 +74,14 @@ mod tests {
                 is_local: false,
             })
             .collect();
-        (id, None, Index::from_leaves(cmds))
+        (id, Index::from_leaves(cmds))
     }
 
     #[test]
     fn lists_builtins_and_externals_sorted() {
-        let (id, cfg, cmds) = ctx_with(&["who"]);
+        let (id, cmds) = ctx_with(&["who"]);
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let out = collect(&[], &ctx);
@@ -96,10 +94,9 @@ mod tests {
 
     #[test]
     fn eval_filter_lists_only_eval_commands() {
-        let (id, cfg, cmds) = ctx_with_eval(&[("cd", true), ("who", false)]);
+        let (id, cmds) = ctx_with_eval(&[("cd", true), ("who", false)]);
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let out = collect(&["--eval".to_string()], &ctx);
@@ -108,10 +105,9 @@ mod tests {
 
     #[test]
     fn no_eval_filter_excludes_eval_commands() {
-        let (id, cfg, cmds) = ctx_with_eval(&[("cd", true), ("who", false)]);
+        let (id, cmds) = ctx_with_eval(&[("cd", true), ("who", false)]);
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &cmds,
         };
         let out = collect(&["--no-eval".to_string()], &ctx);

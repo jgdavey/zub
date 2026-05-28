@@ -4,7 +4,6 @@ use crate::index::{CommandInfo, Index, Node};
 #[derive(Debug, PartialEq)]
 pub enum Resolution<'a> {
     Builtin {
-        name: String,
         builtin: &'a builtins::Builtin,
     },
     /// An external command, with the number of leading args its (possibly
@@ -36,10 +35,7 @@ pub fn resolve<'a>(args: &'a [String], index: &'a Index) -> Resolution<'a> {
     if let Some(builtin) = builtins::get(first) {
         let overriding = index.get(first).is_some_and(|c| c.front.overrides);
         if !overriding {
-            return Resolution::Builtin {
-                name: first.clone(),
-                builtin,
-            };
+            return Resolution::Builtin { builtin };
         }
     }
 
@@ -142,7 +138,6 @@ mod tests {
         assert_eq!(
             resolve(&args(&["help"]), &index(vec![])),
             Resolution::Builtin {
-                name: "help".to_string(),
                 builtin: builtins::get("help").unwrap()
             }
         );
@@ -153,7 +148,6 @@ mod tests {
         assert_eq!(
             resolve(&args(&["help"]), &index(vec![cmd("help", false)])),
             Resolution::Builtin {
-                name: "help".to_string(),
                 builtin: builtins::get("help").unwrap()
             }
         );

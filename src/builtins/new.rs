@@ -121,7 +121,6 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::identity::Identity;
     use crate::index::Index;
     use tempfile::tempdir;
@@ -133,11 +132,9 @@ mod tests {
             local_root: None,
             config_path: PathBuf::new(),
         };
-        let cfg: Option<Config> = None;
         let index = Index::default();
         let ctx = Context {
             identity: &id,
-            config: &cfg,
             index: &index,
         };
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
