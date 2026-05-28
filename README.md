@@ -1,12 +1,92 @@
 # zub: organize zubprogramz
 
-Zub is a model for setting up shell programs that use subcommands, like `git` or `rbenv`. Building a zub program does not require you to write shell scripts in bash — you can write subcommands in any scripting language you prefer.
+Zub is a model for setting up shell programs that use subcommands, like somewhat like this `git` CLI. Building a zub program does not require you to write shell scripts in bash — you can write subcommands in any scripting language you prefer.
 
 Zub started as a fork of `qrush/sub`, but has diverged enough that a new name and repo felt warranted.
 
 A zub program is run at the command line using this style:
 
     $ [name of program] [subcommand] [(args)]
+
+So, with a zub program called `my`, and scripts (subcommands) called
+`date` and `weather`, you would be able to invoke the following:
+
+    $ my date
+
+    # OR
+
+    $ my weather --additional args
+
+## Install zub
+
+### Using mise (recommended)
+
+First, make the shared `zub` binary (and `zub-scaffold`) available on your
+`PATH`. The easiest way is [`mise`](https://mise.jdx.dev/), which pulls a
+prebuilt binary from the GitHub releases:
+
+    mise use -g github:jgdavey/zub
+
+### Manually from a release
+
+Or grab a release tarball directly (Linux and Mac currently supported)
+and drop both binaries on your `PATH`:
+
+    curl -L https://github.com/jgdavey/sub/releases/download/v0.1.0/zub-0.1.0-<target>.tar.gz \
+      | tar xz && mv zub zub-scaffold ~/.local/bin/
+
+### Building from source
+
+After cloning this repo, run:
+
+    cargo install --path .
+
+…which puts `zub` and `zub-scaffold` in `~/.cargo/bin`.
+
+## Setup a new zub program
+
+Use the `zub-scaffold` tool to generate a fresh program tree:
+
+    zub-scaffold rush
+
+This creates a `rush/` directory containing a `zub.yml` (with `name: rush`), a
+self-locating `bin/rush` shim, the completion scripts, an example `libexec/who`
+command, and an empty `share` directory. There's no source-templating or build
+step — your program's identity comes entirely from `zub.yml`. (Give it a better
+name than `rush`!)
+
+By default `zub-scaffold` refuses to touch an existing directory. To refresh the
+generated files of a program you already have — after upgrading `zub`, say — run
+it with `--regenerate` from the program's **parent** directory:
+
+    zub-scaffold rush --regenerate            # ask before replacing each existing file
+    zub-scaffold rush --regenerate=clobber    # replace them all, no prompts
+
+Regeneration only ever rewrites the files `zub-scaffold` generates (`zub.yml`,
+`bin/rush`, the completion scripts, and the example `libexec/who`); missing ones
+are written silently. Your own `libexec` commands and `share` contents are never
+touched.
+
+Then load your program in your shell. Say your program lives at `$HOME/.rush`:
+
+For bash users:
+
+    echo 'eval "$($HOME/.rush/bin/rush init - bash)"' >> ~/.bash_profile
+    exec bash
+
+For zsh users:
+
+    echo 'eval "$($HOME/.rush/bin/rush init - zsh)"' >> ~/.zshenv
+    source ~/.zshenv
+
+`init` derives the `PATH` entries and completion wiring from your `zub.yml`, and
+defines a shell function that runs `zub -C <your config>` under the hood.
+
+## What's this about?
+    
+At its heart, zub is just a way to organize scripts, but the folder
+structure and optional frontmatter enhance what would be a pile of
+files by providing discoverability, *help*, and *completions*.
 
 Here's some quick examples:
 
@@ -19,9 +99,9 @@ Each subcommand maps to a separate, standalone executable program. Zub programs 
     .
     ├── zub.yml           # declares your program's name (and optional metadata)
     ├── bin/<name>        # entrypoint shim that hands off to the shared zub binary
-    ├── completions       # (optional) bash/zsh completions
-    ├── libexec           # where the subcommand executables are
-    └── share             # static data storage
+    ├── completions       # bash/zsh completions
+    ├── libexec           # <- where you put all your subcommand scripts/executables
+    └── share             # <- static data storage
 
 The `zub.yml` at the root names your program. A single shared `zub` binary
 provides the dispatcher and every built-in command; it learns *which* program it
@@ -74,7 +154,7 @@ Of course, this is a simple example... but now `rush who` should work!
     $ rush who
     qrush     console  Sep 14 17:15 
 
-You can run *any* executable in the `libexec` directly, as long as it follows the `NAME-SUBCOMMAND` convention. Try out a Ruby script or your favorite language!
+You can run *any* script or program in the `libexec` directly, as long as it is executable.
 
 ## What's built in
 
@@ -105,7 +185,10 @@ set -e
 echo $_RUSH_ROOT
 ```
 
-You can also use this environment variable to call other commands inside of your `libexec` directly. Composition of this type very much encourages reuse of small scripts, and keeps scripts doing *one* thing simply.
+You can also use this environment variable to call other commands
+inside of your `libexec` directly. Composition of this type very much
+encourages reuse of small scripts, and keeps scripts doing *one* thing
+simply.
 
 ## Self-documenting subcommands
 
@@ -165,7 +248,10 @@ That's not all you get by convention with zub...
 
 ## Autocompletion
 
-Your program loves autocompletion. It's the mustard, mayo, or whatever topping you'd like that day for your commands. Just like real toppings, you have to opt into them! Zub provides two kinds of autocompletion:
+Your program loves autocompletion. It's the mustard, mayo, or whatever
+topping you'd like that day for your commands. Just like real
+toppings, you have to opt into them! Zub provides two kinds of
+autocompletion:
 
 1. Automatic autocompletion to find subcommands (What can this program do?)
 2. Opt-in autocompletion of potential arguments for your subcommands (What can this subcommand do?)
@@ -189,83 +275,23 @@ fi
 ```
 
 The `complete: true` key lets the core know the script participates in
-completion without scanning its body — commands that don't declare it simply
-fall back to your shell's default (filename) completion.
+completion without scanning its body — commands that don't declare it
+simply fall back to your shell's default completion (usually
+filenames).
 
-Passing the `--complete` flag to this subcommand short circuits the real command, and then runs another subcommand instead. The output from your subcommand's `--complete` run is sent to your shell's autocompletion handler for you, and you don't ever have to once worry about how any of that works!
+Passing the `--complete` flag to this subcommand short circuits the
+real command, and then runs another subcommand instead. The output
+from your subcommand's `--complete` run is sent to your shell's
+autocompletion handler for you, and you don't ever have to once worry
+about how any of that works!
 
-Run the `init` subcommand after you've prepared your program to get it loading automatically in your shell.
+> [!IMPORTANT]
+> A subcommands `--complete` handler must exit in some way (via `exec`,
+> `exit`, or some other means) to prevent the rest of the script from
+> running!
 
-## Shortcuts
-
-Creating shortcuts for commands is easy, just symlink the shorter version you'd like to run inside of your `libexec` directory.
-
-Let's say we want to shorten up our `rush who` to `rush w`. Just make a symlink!
-
-    cd libexec
-    ln -s rush-who rush-w
-
-Now, `rush w` should run `libexec/rush-who`, and save you mere milliseconds of typing every day!
-
-## Make your own program
-
-Use the `zub-scaffold` tool to generate a fresh program tree:
-
-    zub-scaffold rush
-
-This creates a `rush/` directory containing a `zub.yml` (with `name: rush`), a
-self-locating `bin/rush` shim, the completion scripts, an example `libexec/who`
-command, and an empty `share` directory. There's no source-templating or build
-step — your program's identity comes entirely from `zub.yml`. (Give it a better
-name than `rush`!)
-
-By default `zub-scaffold` refuses to touch an existing directory. To refresh the
-generated files of a program you already have — after upgrading `zub`, say — run
-it with `--regenerate` from the program's **parent** directory:
-
-    zub-scaffold rush --regenerate            # ask before replacing each existing file
-    zub-scaffold rush --regenerate=clobber    # replace them all, no prompts
-
-Regeneration only ever rewrites the files `zub-scaffold` generates (`zub.yml`,
-`bin/rush`, the completion scripts, and the example `libexec/who`); missing ones
-are written silently. Your own `libexec` commands and `share` contents are never
-touched.
-
-## Install zub and your program
-
-First, make the shared `zub` binary (and `zub-scaffold`) available on your
-`PATH`. The easiest way is [`mise`](https://mise.jdx.dev/), which pulls a
-prebuilt binary from the GitHub releases:
-
-    mise use -g 'ubi:jgdavey/sub[exe=zub]'
-
-Or grab a release tarball directly (one per platform — `aarch64-apple-darwin`,
-`x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`)
-and drop both binaries on your `PATH`:
-
-    curl -L https://github.com/jgdavey/sub/releases/download/v0.1.0/zub-0.1.0-<target>.tar.gz \
-      | tar xz && mv zub zub-scaffold ~/.local/bin/
-
-Or build from this repo:
-
-    cargo install --path .
-
-…which puts `zub` and `zub-scaffold` in `~/.cargo/bin`.
-
-Then load your program in your shell. Say your program lives at `$HOME/.rush`:
-
-For bash users:
-
-    echo 'eval "$($HOME/.rush/bin/rush init - bash)"' >> ~/.bash_profile
-    exec bash
-
-For zsh users:
-
-    echo 'eval "$($HOME/.rush/bin/rush init - zsh)"' >> ~/.zshenv
-    source ~/.zshenv
-
-`init` derives the `PATH` entries and completion wiring from your `zub.yml`, and
-defines a shell function that runs `zub -C <your config>` under the hood.
+Run the `init` subcommand after you've prepared your program to get it
+loading automatically in your shell.
 
 ## Roadmap
 
