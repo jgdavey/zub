@@ -50,7 +50,7 @@ fn render_rows(ctx: &Context, prefix: Option<&str>, rows: Vec<(String, String)>,
     let summary_width = columns.saturating_sub(longest + 5).max(10);
     let mut out = String::new();
     out.push_str(&format!("Usage: {prog} {header}<command> [<args>]\n\n", ));
-    out.push_str(&format!("Commands:\n"));
+    out.push_str("Commands:\n");
     for (name, summary) in rows {
         out.push_str(&format!(
             "   {name:<longest$}  {}\n",
@@ -101,11 +101,34 @@ fn render_detail(doc: Doc) -> Option<String> {
     Some(out)
 }
 
+/// The terminal width in columns. `COLUMNS` is honored as an explicit override
+/// when set — but shells keep it as a *non-exported* shell variable, so it is
+/// usually absent from a child process's environment. The reliable source is
+/// the controlling tty, queried via `TIOCGWINSZ`; 80 is the last-resort default
+/// (e.g. when stdout is a pipe rather than a terminal).
 fn terminal_columns() -> usize {
-    env::var("COLUMNS")
-        .ok()
+    columns_from(env::var("COLUMNS").ok().as_deref(), tty_columns())
+}
+
+/// Pick a width: an explicit, parseable `COLUMNS` override wins; else the
+/// tty-reported width; else 80.
+fn columns_from(env_cols: Option<&str>, tty_cols: Option<usize>) -> usize {
+    env_cols
         .and_then(|c| c.parse().ok())
+        .or(tty_cols)
         .unwrap_or(80)
+}
+
+/// The stdout terminal's column count via `TIOCGWINSZ`, or `None` when stdout is
+/// not a terminal (the ioctl fails) or reports zero columns.
+fn tty_columns() -> Option<usize> {
+    use std::os::unix::io::AsRawFd;
+    // SAFETY: `winsize` is plain data; `ioctl` fills it and returns 0 on success.
+    // `ws_col` is only read after a successful call.
+    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+    let fd = std::io::stdout().as_raw_fd();
+    let rc = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) };
+    (rc == 0 && ws.ws_col > 0).then_some(ws.ws_col as usize)
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
@@ -280,5 +303,21 @@ mod tests {
     #[test]
     fn truncate_short_string_unchanged() {
         assert_eq!(truncate("hi", 80), "hi");
+    }
+
+    #[test]
+    fn columns_prefers_explicit_override() {
+        assert_eq!(columns_from(Some("120"), Some(40)), 120);
+    }
+
+    #[test]
+    fn columns_falls_back_to_tty_when_override_absent_or_unparseable() {
+        assert_eq!(columns_from(None, Some(40)), 40);
+        assert_eq!(columns_from(Some("wide"), Some(40)), 40);
+    }
+
+    #[test]
+    fn columns_defaults_to_80_without_override_or_tty() {
+        assert_eq!(columns_from(None, None), 80);
     }
 }
