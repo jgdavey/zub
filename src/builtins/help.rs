@@ -37,13 +37,20 @@ fn rows_for(entries: &[Resolution]) -> Vec<(String, String)> {
 
 /// Render a command table with the given usage `header` command (e.g.
 /// `"<command>"` or `"db <command>"`) and rows.
-fn render_rows(ctx: &Context, header: &str, rows: Vec<(String, String)>, columns: usize) -> String {
+fn render_rows(ctx: &Context, prefix: Option<&str>, rows: Vec<(String, String)>, columns: usize) -> String {
     let prog = &ctx.identity.name;
+    let header = if let Some(pre) = prefix {
+        let mut s = pre.to_string();
+        s.push(' ');
+        s
+    } else {
+        "".to_string()
+    };
     let longest = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
     let summary_width = columns.saturating_sub(longest + 5).max(10);
     let mut out = String::new();
-    out.push_str(&format!("Usage: {prog} {header} [<args>]\n\n"));
-    out.push_str(&format!("Some useful {prog} commands are:\n"));
+    out.push_str(&format!("Usage: {prog} {header}<command> [<args>]\n\n", ));
+    out.push_str(&format!("Commands:\n"));
     for (name, summary) in rows {
         out.push_str(&format!(
             "   {name:<longest$}  {}\n",
@@ -51,7 +58,7 @@ fn render_rows(ctx: &Context, header: &str, rows: Vec<(String, String)>, columns
         ));
     }
     out.push_str(&format!(
-        "\nSee '{prog} help <command>' for more information on a specific command.\n"
+        "\nSee '{prog} help {header}<command>' for more information on a specific command.\n"
     ));
     out
 }
@@ -63,15 +70,14 @@ pub fn render_table(ctx: &Context, columns: usize) -> String {
         .iter()
         .map(|n| ctx.index.resolve(std::slice::from_ref(n)))
         .collect();
-    render_rows(ctx, "<command>", rows_for(&entries), columns)
+    render_rows(ctx, None, rows_for(&entries), columns)
 }
 
 /// Render the child table for a namespace (e.g. `help db`).
 pub fn render_namespace_table(namespace: &Namespace, ctx: &Context, columns: usize) -> String {
-    let header = format!("{} <command>", namespace.components.join(" "));
     render_rows(
         ctx,
-        &header,
+        Some(&namespace.components.join(" ")),
         rows_for(&namespace.child_resolutions()),
         columns,
     )
