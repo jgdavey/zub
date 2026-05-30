@@ -1,5 +1,5 @@
-use crate::builtins::Context;
 use crate::builtins::top_level_names;
+use crate::builtins::Context;
 use crate::index::{Namespace, Resolution};
 use std::env;
 
@@ -25,11 +25,12 @@ fn rows_for(entries: &[Resolution]) -> Vec<(String, String)> {
         .iter()
         .filter_map(|res| {
             let summary = res.summary()?;
+            let name = res.name()?;
             let summary = match res {
                 Resolution::Command { command } if command.is_local => format!("(local) {summary}"),
                 _ => summary,
             };
-            Some((res.components().join(" "), summary))
+            Some((name, summary))
         })
         .collect()
 }
@@ -68,7 +69,12 @@ pub fn render_table(ctx: &Context, columns: usize) -> String {
 /// Render the child table for a namespace (e.g. `help db`).
 pub fn render_namespace_table(namespace: &Namespace, ctx: &Context, columns: usize) -> String {
     let header = format!("{} <command>", namespace.components.join(" "));
-    render_rows(ctx, &header, rows_for(&namespace.child_resolutions()), columns)
+    render_rows(
+        ctx,
+        &header,
+        rows_for(&namespace.child_resolutions()),
+        columns,
+    )
 }
 
 /// Render the detailed help for a single command. `None` if unknown.
@@ -126,11 +132,18 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 
     match ctx.index.resolve(args) {
         Resolution::NotFound => {
-            eprintln!("{}: no such command `{}'", ctx.identity.name, args.join(" "));
+            eprintln!(
+                "{}: no such command `{}'",
+                ctx.identity.name,
+                args.join(" ")
+            );
             1
         }
         Resolution::Namespace { namespace } => {
-            print!("{}", render_namespace_table(namespace, ctx, terminal_columns()));
+            print!(
+                "{}",
+                render_namespace_table(namespace, ctx, terminal_columns())
+            );
             0
         }
         // Built-in usage carries a `<name>` placeholder; command usage never
@@ -244,9 +257,9 @@ mod tests {
             panic!("expected db to resolve to a namespace");
         };
         let table = render_namespace_table(namespace, &ctx, 80);
-        assert!(table.contains("db migrate"));
+        assert!(table.contains("migrate"));
         assert!(table.contains("run migrations"));
-        assert!(table.contains("db seed"));
+        assert!(table.contains("seed"));
     }
 
     #[test]
