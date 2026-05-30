@@ -30,17 +30,26 @@ impl Command {
     }
 }
 
-/// A namespace (branch) in the tree — a directory grouping subcommands.
+/// A namespace branch in the tree — a directory grouping subcommands, holding
+/// its own child nodes (just as a `Command` is held directly in a `Node::Leaf`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Namespace {
     /// The last path component (`db` for `db migrate`).
     pub name: String,
     /// The full path components leading to this namespace (`["db"]`).
     pub components: Vec<String>,
-    /// The directory's filesystem path.
+    /// The directory's filesystem path (the first scan to create the branch
+    /// wins, so a local namespace's path is kept over an overlapping root one).
     pub path: PathBuf,
+    /// Child nodes keyed by name.
+    pub children: BTreeMap<String, Node>,
+}
+
+impl Namespace {
     /// The immediate child entry names, sorted.
-    pub subcommands: Vec<String>,
+    pub fn subcommands(&self) -> Vec<String> {
+        self.children.keys().cloned().collect()
+    }
 }
 
 /// A node in the command tree: either a leaf command or a namespace branch.
@@ -49,22 +58,13 @@ pub struct Namespace {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Leaf(Command),
-    Branch(Branch),
-}
-
-/// A namespace branch: its directory path plus its child nodes keyed by name.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Branch {
-    /// The directory's filesystem path (the first scan to create the branch
-    /// wins, so a local namespace's path is kept over an overlapping root one).
-    pub path: PathBuf,
-    pub children: BTreeMap<String, Node>,
+    Branch(Namespace),
 }
 
 impl Node {
     pub fn children(&self) -> Option<Vec<String>> {
         match self {
-            Node::Branch(b) => Some(b.children.keys().cloned().collect()),
+            Node::Branch(ns) => Some(ns.subcommands()),
             _ => None,
         }
     }
@@ -93,7 +93,7 @@ pub enum Resolution<'a> {
         consumed: usize,
     },
     Namespace {
-        namespace: Namespace,
+        namespace: &'a Namespace,
         consumed: usize,
     },
     NotFound,
@@ -136,7 +136,8 @@ impl Resolution<'_> {
             Resolution::Builtin(b) => Some(b.summary.to_string()),
             Resolution::Command { command, .. } => command.front.summary.clone(),
             Resolution::Namespace { namespace, .. } => {
-                Some(format!("{} subcommands", namespace.subcommands.len()))
+                let subs = namespace.subcommands();
+                Some(format!("{} subcommands ({})", subs.len(), subs.join(", ")))
             }
             Resolution::NotFound => None,
         }
@@ -177,13 +178,8 @@ impl Index {
 
         match self.resolve_node(args) {
             Some((consumed, Node::Leaf(command))) => Resolution::Command { command, consumed },
-            Some((consumed, Node::Branch(branch))) => Resolution::Namespace {
-                namespace: Namespace {
-                    name: args[consumed - 1].clone(),
-                    components: args[..consumed].to_vec(),
-                    path: branch.path.clone(),
-                    subcommands: branch.children.keys().cloned().collect(),
-                },
+            Some((consumed, Node::Branch(namespace))) => Resolution::Namespace {
+                namespace,
                 consumed,
             },
             None => Resolution::NotFound,
@@ -331,8 +327,11 @@ fn insert(branch: &mut BTreeMap<String, Node>, components: &[String], info: Comm
         return;
     }
     let dir = ancestor(&info.path, tail.len());
+    let components = info.components[..info.components.len() - tail.len()].to_vec();
     let child = branch.entry(head.clone()).or_insert_with(|| {
-        Node::Branch(Branch {
+        Node::Branch(Namespace {
+            name: head.clone(),
+            components,
             path: dir,
             children: BTreeMap::new(),
         })
@@ -614,7 +613,7 @@ mod tests {
                 consumed,
             } => {
                 assert_eq!(consumed, 1);
-                assert_eq!(namespace.subcommands, vec!["migrate"]);
+                assert_eq!(namespace.subcommands(), vec!["migrate"]);
                 assert_eq!(namespace.name, "db");
                 assert_eq!(namespace.components, vec!["db"]);
             }
@@ -683,7 +682,10 @@ mod tests {
         let res = index.resolve(&args(&["db"]));
         assert_eq!(res.name().as_deref(), Some("db"));
         assert_eq!(res.components(), vec!["db"]);
-        assert_eq!(res.summary().as_deref(), Some("2 subcommands"));
+        assert_eq!(
+            res.summary().as_deref(),
+            Some("2 subcommands (migrate, seed)")
+        );
         assert_eq!(res.usage(), None);
     }
 }

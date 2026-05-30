@@ -24,7 +24,7 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
             }
         }
         Resolution::Namespace { namespace, .. } => {
-            for s in namespace.subcommands {
+            for s in namespace.subcommands() {
                 print!("{s}");
             }
             0

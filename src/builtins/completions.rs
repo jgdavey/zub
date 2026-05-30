@@ -42,7 +42,7 @@ pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> Comp
                 args,
             }
         }
-        Resolution::Namespace { namespace, .. } => CompAction::Children(namespace.subcommands),
+        Resolution::Namespace { namespace, .. } => CompAction::Children(namespace.subcommands()),
         Resolution::NotFound => CompAction::Fallback,
     }
 }
