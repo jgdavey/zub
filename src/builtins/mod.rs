@@ -26,7 +26,7 @@ pub const BUILTINS: &[Builtin] = &[
         usage: "$0 [--eval | --no-eval]",
         summary: "List all commands",
         help: "Lists every command, one per line. `--eval`/`--no-eval` restrict \
-               to (or exclude) commands whose front-matter sets `eval: true`. \
+               to (or exclude) commands whose front-matter sets `eval: true`.\n\
                Used by `init` to build the eval wrapper.",
         run: commands::run,
         complete: commands::complete,
