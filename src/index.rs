@@ -71,20 +71,6 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn children(&self) -> Option<Vec<String>> {
-        match self {
-            Node::Branch(ns) => Some(ns.subcommands()),
-            _ => None,
-        }
-    }
-
-    pub fn command(&self) -> Option<&Command> {
-        match self {
-            Node::Leaf(c) => Some(c),
-            _ => None,
-        }
-    }
-
     pub fn is_namespace(&self) -> bool {
         matches!(self, Node::Branch(_))
     }
@@ -550,8 +536,10 @@ mod tests {
         let index = index_of(&["db migrate"]);
         let (consumed, node) = index.resolve_node(&["db".to_string()]).unwrap();
         assert_eq!(consumed, 1);
-        assert!(node.is_namespace());
-        assert_eq!(node.children().unwrap(), vec!["migrate"]);
+        let Node::Branch(ns) = node else {
+            panic!("expected branch");
+        };
+        assert_eq!(ns.subcommands(), vec!["migrate"]);
     }
 
     #[test]
