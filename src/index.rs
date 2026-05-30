@@ -1,19 +1,46 @@
+use crate::builtins::{self, Builtin};
 use crate::frontmatter;
 use crate::frontmatter::FrontMatter;
 use crate::identity::Identity;
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 
+/// A leaf command in the tree.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CommandInfo {
-    /// Full, space-joined command name (`db migrate`). Kept for display, the
-    /// eval wrapper, and error messages.
+pub struct Command {
+    /// The last path component (`migrate` for `db migrate`).
     pub name: String,
+    /// The full path components (`["db", "migrate"]`).
+    pub components: Vec<String>,
+    /// The executable's filesystem path.
     pub path: PathBuf,
     pub front: FrontMatter,
     pub is_local: bool,
+}
+
+impl Command {
+    /// The full, space-joined command name (`db migrate`). Used for display, the
+    /// eval wrapper, and error messages.
+    pub fn full_name(&self) -> String {
+        self.components.join(" ")
+    }
+}
+
+/// A namespace (branch) in the tree — a directory grouping subcommands.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Namespace {
+    /// The last path component (`db` for `db migrate`).
+    pub name: String,
+    /// The full path components leading to this namespace (`["db"]`).
+    pub components: Vec<String>,
+    /// The directory's filesystem path.
+    pub path: PathBuf,
+    /// The immediate child entry names, sorted.
+    pub subcommands: Vec<String>,
 }
 
 /// A node in the command tree: either a leaf command or a namespace branch.
@@ -21,19 +48,28 @@ pub struct CommandInfo {
 /// conflict, the first scan — local — wins the slot.)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Leaf(CommandInfo),
-    Branch(BTreeMap<String, Node>),
+    Leaf(Command),
+    Branch(Branch),
+}
+
+/// A namespace branch: its directory path plus its child nodes keyed by name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Branch {
+    /// The directory's filesystem path (the first scan to create the branch
+    /// wins, so a local namespace's path is kept over an overlapping root one).
+    pub path: PathBuf,
+    pub children: BTreeMap<String, Node>,
 }
 
 impl Node {
     pub fn children(&self) -> Option<Vec<String>> {
         match self {
-            Node::Branch(b) => Some(b.keys().cloned().collect()),
+            Node::Branch(b) => Some(b.children.keys().cloned().collect()),
             _ => None,
         }
     }
 
-    pub fn command(&self) -> Option<&CommandInfo> {
+    pub fn command(&self) -> Option<&Command> {
         match self {
             Node::Leaf(c) => Some(c),
             _ => None,
@@ -45,16 +81,120 @@ impl Node {
     }
 }
 
+/// The outcome of resolving leading args against the index: a built-in, an
+/// external command, a namespace, or nothing. `Command`/`Namespace` carry
+/// `consumed` — how many leading args their (possibly multi-token) name took;
+/// the rest pass through.
+#[derive(Debug, PartialEq)]
+pub enum Resolution<'a> {
+    Builtin(&'a Builtin),
+    Command {
+        command: &'a Command,
+        consumed: usize,
+    },
+    Namespace {
+        namespace: Namespace,
+        consumed: usize,
+    },
+    NotFound,
+}
+
+impl Resolution<'_> {
+    /// The resolved entry's short name (last component), if any.
+    pub fn name(&self) -> Option<String> {
+        match self {
+            Resolution::Builtin(b) => Some(b.name.to_string()),
+            Resolution::Command { command, .. } => Some(command.name.clone()),
+            Resolution::Namespace { namespace, .. } => Some(namespace.name.clone()),
+            Resolution::NotFound => None,
+        }
+    }
+
+    /// The resolved entry's full path components.
+    pub fn components(&self) -> Vec<String> {
+        match self {
+            Resolution::Builtin(b) => vec![b.name.to_string()],
+            Resolution::Command { command, .. } => command.components.clone(),
+            Resolution::Namespace { namespace, .. } => namespace.components.clone(),
+            Resolution::NotFound => Vec::new(),
+        }
+    }
+
+    /// The usage line, if documented. Built-in usage may contain a `<name>`
+    /// placeholder for the program name.
+    pub fn usage(&self) -> Option<String> {
+        match self {
+            Resolution::Builtin(b) => Some(b.usage.to_string()),
+            Resolution::Command { command, .. } => command.front.usage.clone(),
+            Resolution::Namespace { .. } | Resolution::NotFound => None,
+        }
+    }
+
+    /// The one-line summary. A namespace gets a synthetic subcommand count.
+    pub fn summary(&self) -> Option<String> {
+        match self {
+            Resolution::Builtin(b) => Some(b.summary.to_string()),
+            Resolution::Command { command, .. } => command.front.summary.clone(),
+            Resolution::Namespace { namespace, .. } => {
+                Some(format!("{} subcommands", namespace.subcommands.len()))
+            }
+            Resolution::NotFound => None,
+        }
+    }
+
+    /// The long-form help text, if documented.
+    pub fn help(&self) -> Option<String> {
+        match self {
+            Resolution::Builtin(b) => Some(b.help.to_string()),
+            Resolution::Command { command, .. } => command.front.help.clone(),
+            Resolution::Namespace { .. } | Resolution::NotFound => None,
+        }
+    }
+}
+
 /// The command tree, rooted at a top-level branch keyed by first path component.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Index(BTreeMap<String, Node>);
 
 impl Index {
+    /// Resolve the leading args to a built-in, an external command, a namespace,
+    /// or not-found — the single external entry point for command lookup.
+    /// External names may be multi-token (`db migrate`); the longest leading run
+    /// of args matching a command's components wins. Built-ins are single-token
+    /// and authoritative for `args[0]` unless a depth-1 external with the same
+    /// name declares `override: true`.
+    pub fn resolve<'a>(&'a self, args: &[String]) -> Resolution<'a> {
+        let Some(first) = args.first() else {
+            return Resolution::NotFound;
+        };
+
+        if let Some(builtin) = builtins::get(first) {
+            let overriding = self.get(first).is_some_and(|c| c.front.overrides);
+            if !overriding {
+                return Resolution::Builtin(builtin);
+            }
+        }
+
+        match self.resolve_node(args) {
+            Some((consumed, Node::Leaf(command))) => Resolution::Command { command, consumed },
+            Some((consumed, Node::Branch(branch))) => Resolution::Namespace {
+                namespace: Namespace {
+                    name: args[consumed - 1].clone(),
+                    components: args[..consumed].to_vec(),
+                    path: branch.path.clone(),
+                    subcommands: branch.children.keys().cloned().collect(),
+                },
+                consumed,
+            },
+            None => Resolution::NotFound,
+        }
+    }
+
     /// Greedily match the longest leading run of `args` to a node in the tree,
     /// returning `(tokens_consumed, node)`. A leaf wins as soon as it is hit; a
     /// branch wins when args run out or the next token misses inside it. Empty
     /// args or a miss on the very first token returns `None`.
-    pub fn resolve<S: AsRef<str>>(&self, args: &[S]) -> Option<(usize, &Node)> {
+    fn resolve_node<'a, S: AsRef<str>>(&'a self, args: &[S]) -> Option<(usize, &'a Node)> {
         if args.is_empty() {
             return None;
         }
@@ -65,7 +205,7 @@ impl Index {
                 None => return last.map(|n| (i, n)),
                 Some(leaf @ Node::Leaf(_)) => return Some((i + 1, leaf)),
                 Some(n @ Node::Branch(next)) => {
-                    branch = next;
+                    branch = &next.children;
                     last = Some(n);
                 }
             }
@@ -74,13 +214,13 @@ impl Index {
     }
 
     /// Strict navigation: walk `args` exactly, rejecting trailing tokens past a
-    /// leaf. (Greedy `resolve` filtered to require every token consumed.)
-    pub fn node<S: AsRef<str>>(&self, args: &[S]) -> Option<(usize, &Node)> {
-        self.resolve(args).filter(|(c, _)| *c == args.len())
+    /// leaf. (Greedy `resolve_node` filtered to require every token consumed.)
+    fn node<'a, S: AsRef<str>>(&'a self, args: &[S]) -> Option<(usize, &'a Node)> {
+        self.resolve_node(args).filter(|(c, _)| *c == args.len())
     }
 
-    /// The leaf command named exactly `name`, if any.
-    pub fn get(&self, name: &str) -> Option<&CommandInfo> {
+    /// The leaf command named exactly `name` (space-joined), if any.
+    pub fn get(&self, name: &str) -> Option<&Command> {
         let args: Vec<_> = name.split(' ').collect();
         match self.node(&args) {
             Some((_, Node::Leaf(info))) => Some(info),
@@ -111,37 +251,39 @@ impl Index {
     }
 
     /// All leaf commands, sorted by full name.
-    pub fn leaves(&self) -> Vec<&CommandInfo> {
+    pub fn leaves(&self) -> Vec<&Command> {
         let mut out = Vec::new();
         collect_leaves(&self.0, &mut out);
-        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out.sort_by_key(|a| a.full_name());
         out
     }
 }
 
 #[cfg(test)]
 impl Index {
-    /// Build an index from leaf commands, keyed by each one's space-joined
-    /// `name`. For tests that construct commands directly.
-    pub fn from_leaves(cmds: Vec<CommandInfo>) -> Index {
+    /// Build an index from leaf commands, keyed by each one's components. For
+    /// tests that construct commands directly.
+    pub fn from_leaves(cmds: Vec<Command>) -> Index {
         let mut root = BTreeMap::new();
         for info in cmds {
-            let comps: Vec<String> = info.name.split(' ').map(String::from).collect();
+            let comps = info.components.clone();
             insert(&mut root, &comps, info);
         }
         Index(root)
     }
 }
 
-/// Test helper: a leaf `CommandInfo` for `name` (space-joined) carrying `front`.
+/// Test helper: a leaf `Command` for `name` (space-joined) carrying `front`.
 /// The path is synthesized — its exact value is irrelevant to the tests that
 /// use this — and `is_local` is false. Shared across the crate's test modules
 /// so they don't each re-spell the same boilerplate.
 #[cfg(test)]
-pub(crate) fn leaf(name: &str, front: FrontMatter) -> CommandInfo {
-    CommandInfo {
-        name: name.to_string(),
+pub(crate) fn leaf(name: &str, front: FrontMatter) -> Command {
+    let components: Vec<String> = name.split(' ').map(String::from).collect();
+    Command {
+        name: components.last().cloned().unwrap_or_default(),
         path: PathBuf::from(format!("/libexec/{}", name.replace(' ', "/"))),
+        components,
         front,
         is_local: false,
     }
@@ -159,29 +301,44 @@ pub(crate) fn index_of(names: &[&str]) -> Index {
     )
 }
 
-fn collect_leaves<'a>(branch: &'a BTreeMap<String, Node>, out: &mut Vec<&'a CommandInfo>) {
+fn collect_leaves<'a>(branch: &'a BTreeMap<String, Node>, out: &mut Vec<&'a Command>) {
     for node in branch.values() {
         match node {
             Node::Leaf(info) => out.push(info),
-            Node::Branch(b) => collect_leaves(b, out),
+            Node::Branch(b) => collect_leaves(&b.children, out),
         }
     }
 }
 
+/// The ancestor of `path` with its last `n` components removed.
+fn ancestor(path: &Path, n: usize) -> PathBuf {
+    let mut p = path.to_path_buf();
+    for _ in 0..n {
+        p.pop();
+    }
+    p
+}
+
 /// Insert a command at its path components into the tree. The first occupant of
 /// a slot wins: an existing leaf or branch is never replaced, and a conflicting
-/// kind (leaf where a branch is needed, or vice versa) is dropped.
-fn insert(branch: &mut BTreeMap<String, Node>, components: &[String], info: CommandInfo) {
+/// kind (leaf where a branch is needed, or vice versa) is dropped. A branch's
+/// directory path is derived from the command's path by stripping the trailing
+/// components below the branch.
+fn insert(branch: &mut BTreeMap<String, Node>, components: &[String], info: Command) {
     let (head, tail) = components.split_first().expect("non-empty components");
     if tail.is_empty() {
         branch.entry(head.clone()).or_insert(Node::Leaf(info));
         return;
     }
-    let child = branch
-        .entry(head.clone())
-        .or_insert_with(|| Node::Branch(BTreeMap::new()));
+    let dir = ancestor(&info.path, tail.len());
+    let child = branch.entry(head.clone()).or_insert_with(|| {
+        Node::Branch(Branch {
+            path: dir,
+            children: BTreeMap::new(),
+        })
+    });
     if let Node::Branch(next) = child {
-        insert(next, tail, info);
+        insert(&mut next.children, tail, info);
     }
     // else: `head` is already a leaf — conflict, drop this command.
 }
@@ -240,19 +397,26 @@ fn scan_dir(base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String,
         if components.is_empty() {
             continue;
         }
-        let name = components.join(" ");
         let front = frontmatter::parse_file(&path).unwrap_or_default();
-        insert(
-            root,
-            &components,
-            CommandInfo {
-                name,
-                path,
-                front,
-                is_local,
-            },
-        );
+        let name = components.last().cloned().unwrap_or_default();
+        let command = Command {
+            name,
+            components,
+            path,
+            front,
+            is_local,
+        };
+        let comps = command.components.clone();
+        insert(root, &comps, command);
     }
+}
+
+/// Replace the current process with the external command. Only returns on error.
+pub fn exec_external(name: &str, path: &Path, args: &[String]) -> ! {
+    let err = ProcessCommand::new(path).args(args).exec();
+    // Only gets here if exec failed
+    eprintln!("{name}: failed to exec {}: {err}", path.display());
+    std::process::exit(126);
 }
 
 #[cfg(test)]
@@ -279,13 +443,17 @@ mod tests {
         }
     }
 
+    fn args(s: &[&str]) -> Vec<String> {
+        s.iter().map(|s| s.to_string()).collect()
+    }
+
     #[test]
     fn discover_lists_leaves_with_metadata() {
         let root = tempdir().unwrap();
         write_exec(root.path(), "who", "#!/bin/sh\n#@ summary: who\n");
         write_exec(root.path(), "where", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), None));
-        let names: Vec<&str> = index.leaves().iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["where", "who"]);
         assert_eq!(
             index.get("who").unwrap().front.summary.as_deref(),
@@ -305,13 +473,28 @@ mod tests {
     }
 
     #[test]
+    fn discover_records_namespace_directory_path() {
+        let root = tempdir().unwrap();
+        write_exec(root.path(), "db/migrate", "#!/bin/sh\n");
+        let index = discover(&id_for(root.path(), None));
+        match index.resolve(&args(&["db"])) {
+            Resolution::Namespace { namespace, .. } => {
+                assert_eq!(namespace.path, root.path().join("libexec").join("db"));
+                assert_eq!(namespace.components, vec!["db"]);
+                assert_eq!(namespace.name, "db");
+            }
+            other => panic!("expected namespace, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn discover_skips_non_executable_and_dotfiles() {
         let root = tempdir().unwrap();
         write_exec(root.path(), "who", "#!/bin/sh\n");
         fs::write(root.path().join("libexec").join("README.md"), "notes\n").unwrap();
         write_exec(root.path(), ".hidden", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), None));
-        let names: Vec<&str> = index.leaves().iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["who"]);
     }
 
@@ -345,25 +528,23 @@ mod tests {
     }
 
     #[test]
-    fn resolve_greedy_returns_deepest_leaf_and_consumed() {
+    fn resolve_node_greedy_returns_deepest_leaf_and_consumed() {
         let index = index_of(&["db migrate"]);
-        let args: Vec<String> = ["db", "migrate", "--force"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let (consumed, info) = index.resolve(&args).unwrap();
+        let (consumed, info) = index
+            .resolve_node(&args(&["db", "migrate", "--force"]))
+            .unwrap();
         assert_eq!(consumed, 2);
         if let Node::Leaf(info) = info {
-            assert_eq!(info.name, "db migrate");
+            assert_eq!(info.full_name(), "db migrate");
         } else {
             panic!("not a node leaf")
         }
     }
 
     #[test]
-    fn resolve_namespace_prefix_returns_branch() {
+    fn resolve_node_namespace_prefix_returns_branch() {
         let index = index_of(&["db migrate"]);
-        let (consumed, node) = index.resolve(&["db".to_string()]).unwrap();
+        let (consumed, node) = index.resolve_node(&["db".to_string()]).unwrap();
         assert_eq!(consumed, 1);
         assert!(node.is_namespace());
         assert_eq!(node.children().unwrap(), vec!["migrate"]);
@@ -384,7 +565,125 @@ mod tests {
     #[test]
     fn leaves_are_sorted_by_full_name() {
         let index = index_of(&["who", "db seed", "db migrate"]);
-        let names: Vec<&str> = index.leaves().iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["db migrate", "db seed", "who"]);
+    }
+
+    // --- resolve (built-in / command / namespace dispatch) ---
+
+    fn cmd(name: &str, overrides: bool) -> Command {
+        leaf(
+            name,
+            FrontMatter {
+                overrides,
+                ..Default::default()
+            },
+        )
+    }
+
+    #[test]
+    fn external_command_resolves_with_one_token_consumed() {
+        let command = cmd("who", false);
+        assert_eq!(
+            Index::from_leaves(vec![command.clone()]).resolve(&args(&["who"])),
+            Resolution::Command {
+                command: &command,
+                consumed: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn nested_command_consumes_its_tokens_and_passes_rest() {
+        let command = cmd("db migrate", false);
+        assert_eq!(
+            Index::from_leaves(vec![command.clone()]).resolve(&args(&["db", "migrate", "--force"])),
+            Resolution::Command {
+                command: &command,
+                consumed: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn namespace_prefix_alone_resolves_to_namespace() {
+        let index = Index::from_leaves(vec![cmd("db migrate", false)]);
+        match index.resolve(&args(&["db"])) {
+            Resolution::Namespace {
+                namespace,
+                consumed,
+            } => {
+                assert_eq!(consumed, 1);
+                assert_eq!(namespace.subcommands, vec!["migrate"]);
+                assert_eq!(namespace.name, "db");
+                assert_eq!(namespace.components, vec!["db"]);
+            }
+            other => panic!("expected namespace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_command_is_not_found() {
+        assert_eq!(
+            Index::default().resolve(&args(&["nope"])),
+            Resolution::NotFound
+        );
+    }
+
+    #[test]
+    fn reserved_name_resolves_to_builtin() {
+        assert_eq!(
+            Index::default().resolve(&args(&["help"])),
+            Resolution::Builtin(builtins::get("help").unwrap())
+        );
+    }
+
+    #[test]
+    fn reserved_name_not_overridden_without_flag() {
+        assert_eq!(
+            Index::from_leaves(vec![cmd("help", false)]).resolve(&args(&["help"])),
+            Resolution::Builtin(builtins::get("help").unwrap())
+        );
+    }
+
+    #[test]
+    fn reserved_name_overridden_with_flag() {
+        let command = cmd("help", true);
+        assert_eq!(
+            Index::from_leaves(vec![command.clone()]).resolve(&args(&["help"])),
+            Resolution::Command {
+                command: &command,
+                consumed: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn resolution_accessors_for_command() {
+        let index = Index::from_leaves(vec![leaf(
+            "db migrate",
+            FrontMatter {
+                summary: Some("run it".into()),
+                usage: Some("rush db migrate".into()),
+                help: Some("long help".into()),
+                ..Default::default()
+            },
+        )]);
+        let res = index.resolve(&args(&["db", "migrate"]));
+        assert_eq!(res.name().as_deref(), Some("migrate"));
+        assert_eq!(res.components(), vec!["db", "migrate"]);
+        assert_eq!(res.usage().as_deref(), Some("rush db migrate"));
+        assert_eq!(res.summary().as_deref(), Some("run it"));
+        assert_eq!(res.help().as_deref(), Some("long help"));
+    }
+
+    #[test]
+    fn resolution_accessors_for_namespace() {
+        let index = Index::from_leaves(vec![cmd("db migrate", false), cmd("db seed", false)]);
+        let res = index.resolve(&args(&["db"]));
+        assert_eq!(res.name().as_deref(), Some("db"));
+        assert_eq!(res.components(), vec!["db"]);
+        assert_eq!(res.summary().as_deref(), Some("2 subcommands"));
+        assert_eq!(res.usage(), None);
     }
 }

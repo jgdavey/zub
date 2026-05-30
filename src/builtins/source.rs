@@ -1,5 +1,5 @@
 use crate::builtins::Context;
-use crate::dispatch::{self, Resolution};
+use crate::index::Resolution;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
@@ -12,7 +12,7 @@ fn which(cmd: &str) -> Option<String> {
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
-    match dispatch::resolve(args, ctx.index) {
+    match ctx.index.resolve(args) {
         Resolution::NotFound => {
             if args.is_empty() {
                 for command in ctx.index.top_level() {
@@ -23,13 +23,13 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
                 1
             }
         }
-        Resolution::Namespace { subcommands, .. } => {
-            for s in subcommands {
+        Resolution::Namespace { namespace, .. } => {
+            for s in namespace.subcommands {
                 print!("{s}");
             }
             0
         }
-        Resolution::Builtin { .. } | Resolution::External { .. } => 0,
+        Resolution::Builtin(_) | Resolution::Command { .. } => 0,
     }
 }
 
@@ -39,8 +39,8 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         return 1;
     }
     let command = args.join(" ");
-    let info = match dispatch::resolve(args, ctx.index) {
-        Resolution::Builtin { .. } => {
+    let info = match ctx.index.resolve(args) {
+        Resolution::Builtin(_) => {
             eprintln!("Cannot show source of builtin command: {command}");
             return 5;
         }
@@ -52,7 +52,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             eprintln!("No such command: {command}");
             return 2;
         }
-        Resolution::External { command, .. } => command,
+        Resolution::Command { command, .. } => command,
     };
 
     let bat = which("bat");

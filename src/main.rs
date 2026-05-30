@@ -4,10 +4,9 @@ use std::process::exit;
 
 use zub::builtins::{self, Context};
 use zub::config;
-use zub::dispatch::{self, Resolution};
 use zub::env_setup;
 use zub::identity;
-use zub::index;
+use zub::index::{self, Resolution};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -64,11 +63,11 @@ fn main() {
         exit(builtins::run("help", help_args, &ctx));
     }
 
-    match dispatch::resolve(&rest, &index) {
-        Resolution::Builtin { builtin } => exit((builtin.run)(&rest[1..], &ctx)),
-        Resolution::External {
-            command, consumed, ..
-        } => dispatch::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..]),
+    match index.resolve(&rest) {
+        Resolution::Builtin(builtin) => exit((builtin.run)(&rest[1..], &ctx)),
+        Resolution::Command { command, consumed } => {
+            index::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..])
+        }
         Resolution::Namespace { .. } => {
             exit(builtins::run("help", &rest, &ctx));
         }

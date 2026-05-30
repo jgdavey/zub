@@ -1,6 +1,6 @@
 use crate::builtins;
 use crate::builtins::Context;
-use crate::dispatch::{self, Resolution};
+use crate::index::Resolution;
 use std::env;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -23,17 +23,15 @@ pub enum CompAction {
 /// Decide how to complete, given the settled tokens (everything before the cursor)
 // The partial here is for future potential use
 pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> CompAction {
-    match dispatch::resolve(settled, ctx.index) {
-        Resolution::Builtin { builtin, .. } => {
+    match ctx.index.resolve(settled) {
+        Resolution::Builtin(builtin) => {
             let args = settled[1..].to_vec();
             CompAction::Builtin {
                 name: builtin.name.to_string(),
                 args,
             }
         }
-        Resolution::External {
-            command, consumed, ..
-        } => {
+        Resolution::Command { command, consumed } => {
             let completes = command.front.complete;
             if !completes {
                 return CompAction::Fallback;
@@ -44,7 +42,7 @@ pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> Comp
                 args,
             }
         }
-        Resolution::Namespace { subcommands, .. } => CompAction::Children(subcommands),
+        Resolution::Namespace { namespace, .. } => CompAction::Children(namespace.subcommands),
         Resolution::NotFound => CompAction::Fallback,
     }
 }

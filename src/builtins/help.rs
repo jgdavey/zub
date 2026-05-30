@@ -1,6 +1,6 @@
 use crate::builtins::Context;
 use crate::builtins::{entry_summary, top_level_names};
-use crate::dispatch::{self, Resolution};
+use crate::index::Resolution;
 use std::env;
 
 struct Doc {
@@ -98,7 +98,7 @@ fn terminal_columns() -> usize {
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
-    match dispatch::resolve(args, ctx.index) {
+    match ctx.index.resolve(args) {
         Resolution::NotFound => {
             if args.is_empty() {
                 for name in top_level_names(ctx) {
@@ -109,13 +109,13 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
                 1
             }
         }
-        Resolution::Namespace { subcommands, .. } => {
-            for s in subcommands {
+        Resolution::Namespace { namespace, .. } => {
+            for s in namespace.subcommands {
                 print!("{s}");
             }
             0
         }
-        Resolution::Builtin { .. } | Resolution::External { .. } => 0,
+        Resolution::Builtin(_) | Resolution::Command { .. } => 0,
     }
 }
 
@@ -127,7 +127,8 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 
     let name = args.join(" ");
 
-    let doc = match dispatch::resolve(args, ctx.index) {
+    let res = ctx.index.resolve(args);
+    match res {
         Resolution::NotFound => {
             eprintln!("{}: no such command `{name}'", &ctx.identity.name);
             return 1;
@@ -136,16 +137,15 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             print!("{}", render_namespace_table(&name, ctx, terminal_columns()));
             return 0;
         }
-        Resolution::Builtin { builtin, .. } => Doc {
-            summary: Some(builtin.summary.to_string()),
-            usage: Some(builtin.usage.replace("<name>", &ctx.identity.name)),
-            help: Some(builtin.help.to_string()),
-        },
-        Resolution::External { command, .. } => Doc {
-            summary: command.front.summary.clone(),
-            usage: command.front.usage.clone(),
-            help: command.front.help.clone(),
-        },
+        Resolution::Builtin(_) | Resolution::Command { .. } => {}
+    }
+
+    // Built-in usage carries a `<name>` placeholder; command usage never does,
+    // so the replacement is harmless for both.
+    let doc = Doc {
+        summary: res.summary(),
+        usage: res.usage().map(|u| u.replace("<name>", &ctx.identity.name)),
+        help: res.help(),
     };
 
     if let Some(detail) = render_detail(doc) {

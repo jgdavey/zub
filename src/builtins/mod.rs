@@ -79,7 +79,7 @@ pub struct Context<'a> {
     pub index: &'a Index,
 }
 
-pub fn get(name: &str) -> Option<&Builtin> {
+pub fn get(name: &str) -> Option<&'static Builtin> {
     BUILTINS.iter().find(|d| d.name == name)
 }
 
