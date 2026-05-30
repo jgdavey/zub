@@ -37,7 +37,12 @@ fn rows_for(entries: &[Resolution]) -> Vec<(String, String)> {
 
 /// Render a command table with the given usage `header` command (e.g.
 /// `"<command>"` or `"db <command>"`) and rows.
-fn render_rows(ctx: &Context, prefix: Option<&str>, rows: Vec<(String, String)>, columns: usize) -> String {
+fn render_rows(
+    ctx: &Context,
+    prefix: Option<&str>,
+    rows: Vec<(String, String)>,
+    columns: usize,
+) -> String {
     let prog = &ctx.identity.name;
     let header = if let Some(pre) = prefix {
         let mut s = pre.to_string();
@@ -49,7 +54,7 @@ fn render_rows(ctx: &Context, prefix: Option<&str>, rows: Vec<(String, String)>,
     let longest = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
     let summary_width = columns.saturating_sub(longest + 5).max(10);
     let mut out = String::new();
-    out.push_str(&format!("Usage: {prog} {header}<command> [<args>]\n\n", ));
+    out.push_str(&format!("Usage: {prog} {header}<command> [<args>]\n\n",));
     out.push_str("Commands:\n");
     for (name, summary) in rows {
         out.push_str(&format!(
@@ -101,27 +106,21 @@ fn render_detail(doc: Doc) -> Option<String> {
     Some(out)
 }
 
-/// The terminal width in columns. `COLUMNS` is honored as an explicit override
-/// when set — but shells keep it as a *non-exported* shell variable, so it is
-/// usually absent from a child process's environment. The reliable source is
-/// the controlling tty, queried via `TIOCGWINSZ`; 80 is the last-resort default
-/// (e.g. when stdout is a pipe rather than a terminal).
-fn terminal_columns() -> usize {
-    columns_from(env::var("COLUMNS").ok().as_deref(), tty_columns())
-}
-
-/// Pick a width: an explicit, parseable `COLUMNS` override wins; else the
-/// tty-reported width; else 80.
-fn columns_from(env_cols: Option<&str>, tty_cols: Option<usize>) -> usize {
-    env_cols
-        .and_then(|c| c.parse().ok())
-        .or(tty_cols)
-        .unwrap_or(80)
-}
-
 /// The stdout terminal's column count, or `None` when stdout is not a terminal.
 fn tty_columns() -> Option<usize> {
     terminal_size::terminal_size().map(|(width, _)| width.0 as usize)
+}
+
+/// The terminal width in columns. `COLUMNS` is honored as an explicit
+/// override when set, but shells keep it as a *non-exported* shell
+/// variable, so it is usually absent from a child process's
+/// environment.
+fn terminal_columns() -> usize {
+    env::var("COLUMNS")
+        .ok()
+        .and_then(|c| c.parse().ok())
+        .or_else(tty_columns)
+        .unwrap_or(80)
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
@@ -147,8 +146,10 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
+    // Ensure a bit of padding on the right
+    let columns = terminal_columns().max(20) - 2;
     if args.is_empty() {
-        print!("{}", render_table(ctx, terminal_columns()));
+        print!("{}", render_table(ctx, columns));
         return 0;
     }
 
@@ -162,10 +163,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             1
         }
         Resolution::Namespace { namespace } => {
-            print!(
-                "{}",
-                render_namespace_table(namespace, ctx, terminal_columns())
-            );
+            print!("{}", render_namespace_table(namespace, ctx, columns));
             0
         }
         // Built-in usage carries a `<name>` placeholder; command usage never
@@ -296,21 +294,5 @@ mod tests {
     #[test]
     fn truncate_short_string_unchanged() {
         assert_eq!(truncate("hi", 80), "hi");
-    }
-
-    #[test]
-    fn columns_prefers_explicit_override() {
-        assert_eq!(columns_from(Some("120"), Some(40)), 120);
-    }
-
-    #[test]
-    fn columns_falls_back_to_tty_when_override_absent_or_unparseable() {
-        assert_eq!(columns_from(None, Some(40)), 40);
-        assert_eq!(columns_from(Some("wide"), Some(40)), 40);
-    }
-
-    #[test]
-    fn columns_defaults_to_80_without_override_or_tty() {
-        assert_eq!(columns_from(None, None), 80);
     }
 }
