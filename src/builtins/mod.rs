@@ -113,24 +113,6 @@ pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
     }
 }
 
-/// Summary for an entry by name: a leaf command's front-matter summary, a
-/// built-in's registered summary, or a synthetic `"<n> subcommands"` count for
-/// a namespace. `None` when the name is an undocumented leaf.
-pub fn entry_summary(name: &str, ctx: &Context) -> Option<String> {
-    if let Some(c) = ctx.index.get(name) {
-        return c.front.summary.clone();
-    }
-    if let Some(b) = BUILTINS.iter().find(|b| b.name == name) {
-        return Some(b.summary.to_string());
-    }
-    let children = ctx.index.children(name);
-    if children.is_empty() {
-        None
-    } else {
-        Some(format!("{} subcommands", children.len()))
-    }
-}
-
 /// Top-level entries: built-ins plus the distinct first components of external
 /// command names (each a depth-1 leaf or a namespace). Deduped, sorted.
 pub fn top_level_names(ctx: &Context) -> Vec<String> {

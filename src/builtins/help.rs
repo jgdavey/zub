@@ -1,5 +1,5 @@
 use crate::builtins::Context;
-use crate::builtins::{entry_summary, top_level_names};
+use crate::builtins::top_level_names;
 use crate::index::Resolution;
 use std::env;
 
@@ -22,9 +22,11 @@ fn truncate(s: &str, max: usize) -> String {
 fn rows_for(entries: &[String], ctx: &Context) -> Vec<(String, String)> {
     let mut rows = Vec::new();
     for name in entries {
-        if let Some(summary) = entry_summary(name, ctx) {
-            let summary = match ctx.index.get(name) {
-                Some(c) if c.is_local => format!("(local) {summary}"),
+        let args: Vec<String> = name.split(' ').map(String::from).collect();
+        let res = ctx.index.resolve(&args);
+        if let Some(summary) = res.summary() {
+            let summary = match res {
+                Resolution::Command { command } if command.is_local => format!("(local) {summary}"),
                 _ => summary,
             };
             rows.push((name.clone(), summary));
@@ -228,9 +230,10 @@ mod tests {
         };
         let table = render_table(&ctx, 80);
         assert!(table.contains("db"));
-        assert!(table.contains("2 subcommands"));
-        // The nested leaves are not listed at the top level.
-        assert!(!table.contains("migrate"));
+        // The namespace's synthetic summary counts and lists its children.
+        assert!(table.contains("2 subcommands (migrate, seed)"));
+        // The nested leaves are not promoted to their own top-level rows.
+        assert!(!table.lines().any(|l| l.trim_start().starts_with("migrate")));
     }
 
     #[test]
