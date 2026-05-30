@@ -51,6 +51,11 @@ impl Namespace {
         self.children.keys().cloned().collect()
     }
 
+    /// The immediate children as resolutions, sorted by name (BTreeMap order).
+    pub fn child_resolutions(&self) -> Vec<Resolution<'_>> {
+        self.children.values().map(Node::resolution).collect()
+    }
+
     pub fn name(&self) -> String {
         self.components.last().cloned().unwrap_or_default()
     }
@@ -82,6 +87,16 @@ impl Node {
 
     pub fn is_namespace(&self) -> bool {
         matches!(self, Node::Branch(_))
+    }
+
+    /// View this node as a [`Resolution`]: a leaf is a `Command`, a branch a
+    /// `Namespace`. Lets a caller that already holds a node build its resolution
+    /// without re-resolving by name.
+    pub fn resolution(&self) -> Resolution<'_> {
+        match self {
+            Node::Leaf(command) => Resolution::Command { command },
+            Node::Branch(namespace) => Resolution::Namespace { namespace },
+        }
     }
 }
 

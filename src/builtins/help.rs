@@ -1,6 +1,6 @@
 use crate::builtins::Context;
 use crate::builtins::top_level_names;
-use crate::index::Resolution;
+use crate::index::{Namespace, Resolution};
 use std::env;
 
 struct Doc {
@@ -18,21 +18,20 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Build `(name, summary)` rows for the given entry names, marking local leaves.
-fn rows_for(entries: &[String], ctx: &Context) -> Vec<(String, String)> {
-    let mut rows = Vec::new();
-    for name in entries {
-        let args: Vec<String> = name.split(' ').map(String::from).collect();
-        let res = ctx.index.resolve(&args);
-        if let Some(summary) = res.summary() {
+/// Build `(name, summary)` rows for the given resolutions, marking local leaves.
+/// Undocumented entries (no summary) are skipped.
+fn rows_for(entries: &[Resolution]) -> Vec<(String, String)> {
+    entries
+        .iter()
+        .filter_map(|res| {
+            let summary = res.summary()?;
             let summary = match res {
                 Resolution::Command { command } if command.is_local => format!("(local) {summary}"),
                 _ => summary,
             };
-            rows.push((name.clone(), summary));
-        }
-    }
-    rows
+            Some((res.components().join(" "), summary))
+        })
+        .collect()
 }
 
 /// Render a command table with the given usage `header` command (e.g.
@@ -58,20 +57,18 @@ fn render_rows(ctx: &Context, header: &str, rows: Vec<(String, String)>, columns
 
 /// Render the top-level command table shown by bare `help`.
 pub fn render_table(ctx: &Context, columns: usize) -> String {
-    let rows = rows_for(&top_level_names(ctx), ctx);
-    render_rows(ctx, "<command>", rows, columns)
+    let names = top_level_names(ctx);
+    let entries: Vec<Resolution> = names
+        .iter()
+        .map(|n| ctx.index.resolve(std::slice::from_ref(n)))
+        .collect();
+    render_rows(ctx, "<command>", rows_for(&entries), columns)
 }
 
-/// Render the child table for a namespace prefix (e.g. `help db`).
-pub fn render_namespace_table(prefix: &str, ctx: &Context, columns: usize) -> String {
-    let children: Vec<String> = ctx
-        .index
-        .children(prefix)
-        .into_iter()
-        .map(|c| format!("{prefix} {c}"))
-        .collect();
-    let rows = rows_for(&children, ctx);
-    render_rows(ctx, &format!("{prefix} <command>"), rows, columns)
+/// Render the child table for a namespace (e.g. `help db`).
+pub fn render_namespace_table(namespace: &Namespace, ctx: &Context, columns: usize) -> String {
+    let header = format!("{} <command>", namespace.components.join(" "));
+    render_rows(ctx, &header, rows_for(&namespace.child_resolutions()), columns)
 }
 
 /// Render the detailed help for a single command. `None` if unknown.
@@ -127,34 +124,31 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         return 0;
     }
 
-    let name = args.join(" ");
-
-    let res = ctx.index.resolve(args);
-    match res {
+    match ctx.index.resolve(args) {
         Resolution::NotFound => {
-            eprintln!("{}: no such command `{name}'", &ctx.identity.name);
-            return 1;
+            eprintln!("{}: no such command `{}'", ctx.identity.name, args.join(" "));
+            1
         }
-        Resolution::Namespace { .. } => {
-            print!("{}", render_namespace_table(&name, ctx, terminal_columns()));
-            return 0;
+        Resolution::Namespace { namespace } => {
+            print!("{}", render_namespace_table(namespace, ctx, terminal_columns()));
+            0
         }
-        Resolution::Builtin(_) | Resolution::Command { .. } => {}
-    }
-
-    // Built-in usage carries a `<name>` placeholder; command usage never does,
-    // so the replacement is harmless for both.
-    let doc = Doc {
-        summary: res.summary(),
-        usage: res.usage().map(|u| u.replace("<name>", &ctx.identity.name)),
-        help: res.help(),
-    };
-
-    if let Some(detail) = render_detail(doc) {
-        print!("{detail}");
-        0
-    } else {
-        1
+        // Built-in usage carries a `<name>` placeholder; command usage never
+        // does, so the replacement is harmless for both.
+        res => {
+            let doc = Doc {
+                summary: res.summary(),
+                usage: res.usage().map(|u| u.replace("<name>", &ctx.identity.name)),
+                help: res.help(),
+            };
+            match render_detail(doc) {
+                Some(detail) => {
+                    print!("{detail}");
+                    0
+                }
+                None => 1,
+            }
+        }
     }
 }
 
@@ -246,7 +240,10 @@ mod tests {
             identity: &id,
             index: &cmds,
         };
-        let table = render_namespace_table("db", &ctx, 80);
+        let Resolution::Namespace { namespace } = ctx.index.resolve(&["db".to_string()]) else {
+            panic!("expected db to resolve to a namespace");
+        };
+        let table = render_namespace_table(namespace, &ctx, 80);
         assert!(table.contains("db migrate"));
         assert!(table.contains("run migrations"));
         assert!(table.contains("db seed"));
