@@ -243,14 +243,6 @@ impl Index {
         }
     }
 
-    /// Sorted child component names under namespace `prefix` (empty otherwise).
-    pub fn children(&self, prefix: &str) -> Vec<String> {
-        let args: Vec<_> = prefix.split(' ').collect();
-        self.node(&args)
-            .and_then(|(_, node)| node.children())
-            .unwrap_or_default()
-    }
-
     /// Sorted top-level entry names (depth-1 leaves and namespaces).
     pub fn top_level(&self) -> Vec<String> {
         self.0.keys().cloned().collect()
@@ -452,6 +444,14 @@ mod tests {
         s.iter().map(|s| s.to_string()).collect()
     }
 
+    /// The sorted child names of the namespace `path` resolves to (panics otherwise).
+    fn subcommands(index: &Index, path: &[&str]) -> Vec<String> {
+        match index.resolve(&args(path)) {
+            Resolution::Namespace { namespace } => namespace.subcommands(),
+            other => panic!("expected namespace, got {other:?}"),
+        }
+    }
+
     #[test]
     fn discover_lists_leaves_with_metadata() {
         let root = tempdir().unwrap();
@@ -474,7 +474,7 @@ mod tests {
         let index = discover(&id_for(root.path(), None));
         assert!(index.get("db migrate").is_some());
         assert!(index.is_namespace(&["db"]));
-        assert_eq!(index.children("db"), vec!["migrate", "seed"]);
+        assert_eq!(subcommands(&index, &["db"]), vec!["migrate", "seed"]);
     }
 
     #[test]
@@ -559,8 +559,11 @@ mod tests {
         let index = index_of(&["who", "db migrate", "db seed", "db schema dump"]);
         assert!(index.get("who").is_some());
         assert!(index.get("db").is_none()); // a namespace, not a leaf
-        assert_eq!(index.children("db"), vec!["migrate", "schema", "seed"]);
-        assert_eq!(index.children("db schema"), vec!["dump"]);
+        assert_eq!(
+            subcommands(&index, &["db"]),
+            vec!["migrate", "schema", "seed"]
+        );
+        assert_eq!(subcommands(&index, &["db", "schema"]), vec!["dump"]);
         assert_eq!(index.top_level(), vec!["db", "who"]);
         assert!(index.is_namespace(&["db"]));
         assert!(!index.is_namespace(&["who"]));
