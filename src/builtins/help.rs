@@ -119,16 +119,9 @@ fn columns_from(env_cols: Option<&str>, tty_cols: Option<usize>) -> usize {
         .unwrap_or(80)
 }
 
-/// The stdout terminal's column count via `TIOCGWINSZ`, or `None` when stdout is
-/// not a terminal (the ioctl fails) or reports zero columns.
+/// The stdout terminal's column count, or `None` when stdout is not a terminal.
 fn tty_columns() -> Option<usize> {
-    use std::os::unix::io::AsRawFd;
-    // SAFETY: `winsize` is plain data; `ioctl` fills it and returns 0 on success.
-    // `ws_col` is only read after a successful call.
-    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
-    let fd = std::io::stdout().as_raw_fd();
-    let rc = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) };
-    (rc == 0 && ws.ws_col > 0).then_some(ws.ws_col as usize)
+    terminal_size::terminal_size().map(|(width, _)| width.0 as usize)
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
