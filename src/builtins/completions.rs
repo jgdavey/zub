@@ -8,21 +8,21 @@ use std::process::Command;
 
 /// What `completions <tokens…>` should do, once the settled tokens are resolved.
 #[derive(Debug, PartialEq)]
-pub enum CompAction {
+pub enum CompAction<'a> {
     /// Run a built-in's own `--complete` with these args.
     Builtin { name: String, args: Vec<String> },
     /// Exec an external command's `--complete` with these args (the command
     /// opted in with `complete: true`).
     Delegate { path: PathBuf, args: Vec<String> },
     /// Offer these namespace child tokens.
-    Children(Vec<String>),
+    Children(Vec<Resolution<'a>>),
     /// No completion source — let the shell fall back (exit 42).
     Fallback,
 }
 
 /// Decide how to complete, given the settled tokens (everything before the cursor)
 // The partial here is for future potential use
-pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> CompAction {
+pub fn plan<'a>(settled: &[String], _partial: Option<String>, ctx: &'a Context) -> CompAction<'a> {
     match ctx.index.resolve(settled) {
         Resolution::Builtin(builtin) => {
             let args = settled[1..].to_vec();
@@ -42,9 +42,20 @@ pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> Comp
                 args,
             }
         }
-        Resolution::Namespace { namespace, .. } => CompAction::Children(namespace.subcommands()),
+        Resolution::Namespace { namespace, .. } => {
+            CompAction::Children(namespace.child_resolutions())
+        }
         Resolution::NotFound => CompAction::Fallback,
     }
+}
+
+fn print_resolution(resolution: Resolution) -> Option<()> {
+    let name = resolution.name()?;
+    match resolution.summary() {
+        Some(s) => println!("{name}[{s}]"),
+        None => println!("{name}"),
+    }
+    Some(())
 }
 
 pub fn complete(_args: &[String], _ctx: &Context) -> i32 {
@@ -87,9 +98,9 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             eprintln!("{}: failed to exec completion: {err}", ctx.identity.name);
             1
         }
-        CompAction::Children(children) => {
-            for child in children {
-                println!("{child}");
+        CompAction::Children(resolutions) => {
+            for resolution in resolutions {
+                print_resolution(resolution);
             }
             0
         }
@@ -101,11 +112,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 /// depth-1 leaves and namespaces alongside built-ins.
 fn print_summaries(ctx: &Context) -> i32 {
     for resolution in ctx.index.top_level_resolutions() {
-        let name = resolution.name().unwrap_or_default();
-        match resolution.summary() {
-            Some(s) => println!("{name}[{s}]"),
-            None => println!("{name}"),
-        }
+        print_resolution(resolution);
     }
     0
 }
@@ -168,10 +175,8 @@ mod tests {
         let cmds = ctx_cmds(&[("db migrate", false), ("db seed", false)]);
         with_ctx(&cmds, |ctx| {
             let action = plan(&["db".to_string()], None, ctx);
-            assert_eq!(
-                action,
-                CompAction::Children(vec!["migrate".to_string(), "seed".to_string()])
-            );
+            let resolutions = vec![ctx.index.get("db migrate"), ctx.index.get("db seed")];
+            assert_eq!(action, CompAction::Children(resolutions));
         });
     }
 

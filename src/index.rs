@@ -169,9 +169,11 @@ impl Index {
         };
 
         if let Some(builtin) = builtins::get(first) {
-            let overriding = self.get(first).is_some_and(|c| c.front.overrides);
-            if !overriding {
-                return Resolution::Builtin(builtin);
+            match self.0.get(first) {
+                Some(Node::Leaf(c)) if c.front.overrides => (),
+                _ => {
+                    return Resolution::Builtin(builtin);
+                }
             }
         }
 
@@ -211,14 +213,10 @@ impl Index {
         self.resolve_node(args).filter(|(c, _)| *c == args.len())
     }
 
-    /// The leaf command named exactly `name` (space-joined), if any.
-    pub fn get(&self, name: &str) -> Option<&Command> {
-        let args: Vec<_> = name.split(' ').collect();
-        match self.node(&args) {
-            Some((_, Node::Leaf(info))) => Some(info),
-            Some((_, Node::Branch(_))) => None,
-            None => None,
-        }
+    /// The resolution named exactly `name` (space-joined), if any.
+    pub fn get(&self, name: &str) -> Resolution<'_> {
+        let args: Vec<_> = name.split(' ').map(|s| s.to_string()).collect();
+        self.resolve(&args)
     }
 
     /// Whether `name` is a namespace (a branch).
@@ -248,7 +246,10 @@ impl Index {
 
     /// The top-level commands (and builtins) as resolutions, sorted by name (BTreeMap order).
     pub fn top_level_resolutions(&self) -> Vec<Resolution<'_>> {
-        self.top_level().into_iter().map(|n| self.resolve(&vec![n])).collect()
+        self.top_level()
+            .into_iter()
+            .map(|n| self.resolve(&[n]))
+            .collect()
     }
 
     /// All leaf commands, sorted by full name.
@@ -271,6 +272,15 @@ impl Index {
             insert(&mut root, &comps, info);
         }
         Index(root)
+    }
+
+    pub fn get_command(&self, name: &str) -> Option<&Command> {
+        let args: Vec<_> = name.split(' ').collect();
+        match self.node(&args) {
+            Some((_, Node::Leaf(info))) => Some(info),
+            Some((_, Node::Branch(_))) => None,
+            None => None,
+        }
     }
 }
 
@@ -464,7 +474,7 @@ mod tests {
         let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["where", "who"]);
         assert_eq!(
-            index.get("who").unwrap().front.summary.as_deref(),
+            index.get_command("who").unwrap().front.summary.as_deref(),
             Some("who")
         );
     }
@@ -475,7 +485,7 @@ mod tests {
         write_exec(root.path(), "db/migrate", "#!/bin/sh\n");
         write_exec(root.path(), "db/seed", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), None));
-        assert!(index.get("db migrate").is_some());
+        assert!(index.get_command("db migrate").is_some());
         assert!(index.is_namespace(&["db"]));
         assert_eq!(subcommands(&index, &["db"]), vec!["migrate", "seed"]);
     }
@@ -514,11 +524,11 @@ mod tests {
         write_exec(root.path(), "db/migrate", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), Some(local.path().to_path_buf())));
         assert_eq!(
-            index.get("db").unwrap().front.summary.as_deref(),
+            index.get_command("db").unwrap().front.summary.as_deref(),
             Some("local-db")
         );
         assert!(!index.is_namespace(&["db"])); // root's db/migrate was dropped
-        assert!(index.get("db migrate").is_none());
+        assert!(index.get_command("db migrate").is_none());
     }
 
     #[test]
@@ -562,8 +572,8 @@ mod tests {
     #[test]
     fn get_children_top_level_and_namespace() {
         let index = index_of(&["who", "db migrate", "db seed", "db schema dump"]);
-        assert!(index.get("who").is_some());
-        assert!(index.get("db").is_none()); // a namespace, not a leaf
+        assert!(index.get_command("who").is_some());
+        assert!(index.get_command("db").is_none()); // a namespace, not a leaf
         assert_eq!(
             subcommands(&index, &["db"]),
             vec!["migrate", "schema", "seed"]
