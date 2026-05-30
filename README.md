@@ -174,7 +174,7 @@ script's front-matter (see below) — otherwise the built-in always wins.
 (Creating a brand new program is handled by the separate `zub-scaffold` tool, not
 a built-in — see "Make your own program" below.)
 
-If you ever need to reference files inside of your program's installation, say to access a file in the `share` directory, your program exposes the directory path in the environment, based on its name. For a program named `rush`, the variable name will be `_RUSH_ROOT`.
+If you ever need to reference files inside of your program's installation, say to access a file in the `share` directory, your program exposes the directory path in the environment as `ZUB_ROOT`.
 
 Here's an example subcommand you could drop into your `libexec` directory to show this in action: (make sure to correct the name!)
 
@@ -182,7 +182,7 @@ Here's an example subcommand you could drop into your `libexec` directory to sho
 #!/usr/bin/env bash
 set -e
 
-echo $_RUSH_ROOT
+echo $ZUB_ROOT
 ```
 
 You can also use this environment variable to call other commands
