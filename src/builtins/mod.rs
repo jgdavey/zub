@@ -112,16 +112,3 @@ pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
         }
     }
 }
-
-/// Top-level entries: built-ins plus the distinct first components of external
-/// command names (each a depth-1 leaf or a namespace). Deduped, sorted.
-pub fn top_level_names(ctx: &Context) -> Vec<String> {
-    let mut set = std::collections::BTreeSet::new();
-    for doc in BUILTINS {
-        set.insert(doc.name.to_string());
-    }
-    for entry in ctx.index.top_level() {
-        set.insert(entry);
-    }
-    set.into_iter().collect()
-}

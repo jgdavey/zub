@@ -1,4 +1,3 @@
-use crate::builtins::top_level_names;
 use crate::builtins::Context;
 use crate::index::{Namespace, Resolution};
 use std::env;
@@ -70,12 +69,8 @@ fn render_rows(
 
 /// Render the top-level command table shown by bare `help`.
 pub fn render_table(ctx: &Context, columns: usize) -> String {
-    let names = top_level_names(ctx);
-    let entries: Vec<Resolution> = names
-        .iter()
-        .map(|n| ctx.index.resolve(std::slice::from_ref(n)))
-        .collect();
-    render_rows(ctx, None, rows_for(&entries), columns)
+    let resolutions = ctx.index.top_level_resolutions();
+    render_rows(ctx, None, rows_for(&resolutions), columns)
 }
 
 /// Render the child table for a namespace (e.g. `help db`).
@@ -127,7 +122,7 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
     match ctx.index.resolve(args) {
         Resolution::NotFound => {
             if args.is_empty() {
-                for name in top_level_names(ctx) {
+                for name in ctx.index.top_level() {
                     println!("{name}");
                 }
                 0

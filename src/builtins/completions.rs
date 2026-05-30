@@ -100,8 +100,9 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 /// zsh-style `name[summary]` lines for top-level command completion. Lists
 /// depth-1 leaves and namespaces alongside built-ins.
 fn print_summaries(ctx: &Context) -> i32 {
-    for name in builtins::top_level_names(ctx) {
-        match ctx.index.resolve(std::slice::from_ref(&name)).summary() {
+    for resolution in ctx.index.top_level_resolutions() {
+        let name = resolution.name().unwrap_or_default();
+        match resolution.summary() {
             Some(s) => println!("{name}[{s}]"),
             None => println!("{name}"),
         }

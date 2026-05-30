@@ -15,7 +15,8 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
     match ctx.index.resolve(args) {
         Resolution::NotFound => {
             if args.is_empty() {
-                for command in ctx.index.top_level() {
+                // Not using builtins here, since they have no source
+                for command in ctx.index.top_level_command_names() {
                     println!("{}", command);
                 }
                 0

@@ -229,9 +229,26 @@ impl Index {
         }
     }
 
-    /// Sorted top-level entry names (depth-1 leaves and namespaces).
-    pub fn top_level(&self) -> Vec<String> {
+    /// Sorted top-level command names (depth-1 leaves and namespaces).
+    pub fn top_level_command_names(&self) -> Vec<String> {
         self.0.keys().cloned().collect()
+    }
+
+    /// Sorted top-level names (commands and builtins)
+    pub fn top_level(&self) -> Vec<String> {
+        let mut set = std::collections::BTreeSet::new();
+        for doc in builtins::BUILTINS {
+            set.insert(doc.name.to_string());
+        }
+        for entry in self.0.keys() {
+            set.insert(entry.to_string());
+        }
+        set.into_iter().collect()
+    }
+
+    /// The top-level commands (and builtins) as resolutions, sorted by name (BTreeMap order).
+    pub fn top_level_resolutions(&self) -> Vec<Resolution<'_>> {
+        self.top_level().into_iter().map(|n| self.resolve(&vec![n])).collect()
     }
 
     /// All leaf commands, sorted by full name.
@@ -552,7 +569,7 @@ mod tests {
             vec!["migrate", "schema", "seed"]
         );
         assert_eq!(subcommands(&index, &["db", "schema"]), vec!["dump"]);
-        assert_eq!(index.top_level(), vec!["db", "who"]);
+        assert_eq!(index.top_level_command_names(), vec!["db", "who"]);
         assert!(index.is_namespace(&["db"]));
         assert!(!index.is_namespace(&["who"]));
     }
