@@ -65,7 +65,8 @@ fn main() {
 
     match index.resolve(&rest) {
         Resolution::Builtin(builtin) => exit((builtin.run)(&rest[1..], &ctx)),
-        Resolution::Command { command, consumed } => {
+        Resolution::Command { command } => {
+            let consumed = command.components.len();
             index::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..])
         }
         Resolution::Namespace { .. } => {

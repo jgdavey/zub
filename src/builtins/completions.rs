@@ -31,12 +31,12 @@ pub fn plan(settled: &[String], _partial: Option<String>, ctx: &Context) -> Comp
                 args,
             }
         }
-        Resolution::Command { command, consumed } => {
+        Resolution::Command { command } => {
             let completes = command.front.complete;
             if !completes {
                 return CompAction::Fallback;
             }
-            let args = settled[consumed..].to_vec();
+            let args = settled[command.components.len()..].to_vec();
             CompAction::Delegate {
                 path: command.path.clone(),
                 args,

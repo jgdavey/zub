@@ -86,20 +86,14 @@ impl Node {
 }
 
 /// The outcome of resolving leading args against the index: a built-in, an
-/// external command, a namespace, or nothing. `Command`/`Namespace` carry
-/// `consumed` — how many leading args their (possibly multi-token) name took;
-/// the rest pass through.
+/// external command, a namespace, or nothing. A resolved entry's (possibly
+/// multi-token) name took `components().len()` leading args; the rest pass
+/// through.
 #[derive(Debug, PartialEq)]
 pub enum Resolution<'a> {
     Builtin(&'a Builtin),
-    Command {
-        command: &'a Command,
-        consumed: usize,
-    },
-    Namespace {
-        namespace: &'a Namespace,
-        consumed: usize,
-    },
+    Command { command: &'a Command },
+    Namespace { namespace: &'a Namespace },
     NotFound,
 }
 
@@ -181,11 +175,8 @@ impl Index {
         }
 
         match self.resolve_node(args) {
-            Some((consumed, Node::Leaf(command))) => Resolution::Command { command, consumed },
-            Some((consumed, Node::Branch(namespace))) => Resolution::Namespace {
-                namespace,
-                consumed,
-            },
+            Some((_, Node::Leaf(command))) => Resolution::Command { command },
+            Some((_, Node::Branch(namespace))) => Resolution::Namespace { namespace },
             None => Resolution::NotFound,
         }
     }
@@ -584,10 +575,7 @@ mod tests {
         let command = cmd("who", false);
         assert_eq!(
             Index::from_leaves(vec![command.clone()]).resolve(&args(&["who"])),
-            Resolution::Command {
-                command: &command,
-                consumed: 1,
-            }
+            Resolution::Command { command: &command }
         );
     }
 
@@ -596,10 +584,7 @@ mod tests {
         let command = cmd("db migrate", false);
         assert_eq!(
             Index::from_leaves(vec![command.clone()]).resolve(&args(&["db", "migrate", "--force"])),
-            Resolution::Command {
-                command: &command,
-                consumed: 2,
-            }
+            Resolution::Command { command: &command }
         );
     }
 
@@ -607,11 +592,7 @@ mod tests {
     fn namespace_prefix_alone_resolves_to_namespace() {
         let index = Index::from_leaves(vec![cmd("db migrate", false)]);
         match index.resolve(&args(&["db"])) {
-            Resolution::Namespace {
-                namespace,
-                consumed,
-            } => {
-                assert_eq!(consumed, 1);
+            Resolution::Namespace { namespace } => {
                 assert_eq!(namespace.subcommands(), vec!["migrate"]);
                 assert_eq!(namespace.components, vec!["db"]);
             }
@@ -648,10 +629,7 @@ mod tests {
         let command = cmd("help", true);
         assert_eq!(
             Index::from_leaves(vec![command.clone()]).resolve(&args(&["help"])),
-            Resolution::Command {
-                command: &command,
-                consumed: 1,
-            }
+            Resolution::Command { command: &command }
         );
     }
 
