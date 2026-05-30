@@ -21,7 +21,7 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
             _ => true,
         };
         if keep {
-            out.insert(c.name.clone());
+            out.insert(c.name());
         }
     }
     out.into_iter().collect()

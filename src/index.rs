@@ -12,8 +12,6 @@ use std::process::Command as ProcessCommand;
 /// A leaf command in the tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Command {
-    /// The last path component (`migrate` for `db migrate`).
-    pub name: String,
     /// The full path components (`["db", "migrate"]`).
     pub components: Vec<String>,
     /// The executable's filesystem path.
@@ -28,14 +26,16 @@ impl Command {
     pub fn full_name(&self) -> String {
         self.components.join(" ")
     }
+
+    pub fn name(&self) -> String {
+        self.components.last().cloned().unwrap_or_default()
+    }
 }
 
 /// A namespace branch in the tree — a directory grouping subcommands, holding
 /// its own child nodes (just as a `Command` is held directly in a `Node::Leaf`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Namespace {
-    /// The last path component (`db` for `db migrate`).
-    pub name: String,
     /// The full path components leading to this namespace (`["db"]`).
     pub components: Vec<String>,
     /// The directory's filesystem path (the first scan to create the branch
@@ -49,6 +49,10 @@ impl Namespace {
     /// The immediate child entry names, sorted.
     pub fn subcommands(&self) -> Vec<String> {
         self.children.keys().cloned().collect()
+    }
+
+    pub fn name(&self) -> String {
+        self.components.last().cloned().unwrap_or_default()
     }
 }
 
@@ -104,8 +108,8 @@ impl Resolution<'_> {
     pub fn name(&self) -> Option<String> {
         match self {
             Resolution::Builtin(b) => Some(b.name.to_string()),
-            Resolution::Command { command, .. } => Some(command.name.clone()),
-            Resolution::Namespace { namespace, .. } => Some(namespace.name.clone()),
+            Resolution::Command { command, .. } => Some(command.name()),
+            Resolution::Namespace { namespace, .. } => Some(namespace.name()),
             Resolution::NotFound => None,
         }
     }
@@ -277,7 +281,6 @@ impl Index {
 pub(crate) fn leaf(name: &str, front: FrontMatter) -> Command {
     let components: Vec<String> = name.split(' ').map(String::from).collect();
     Command {
-        name: components.last().cloned().unwrap_or_default(),
         path: PathBuf::from(format!("/libexec/{}", name.replace(' ', "/"))),
         components,
         front,
@@ -330,7 +333,6 @@ fn insert(branch: &mut BTreeMap<String, Node>, components: &[String], info: Comm
     let components = info.components[..info.components.len() - tail.len()].to_vec();
     let child = branch.entry(head.clone()).or_insert_with(|| {
         Node::Branch(Namespace {
-            name: head.clone(),
             components,
             path: dir,
             children: BTreeMap::new(),
@@ -397,9 +399,7 @@ fn scan_dir(base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String,
             continue;
         }
         let front = frontmatter::parse_file(&path).unwrap_or_default();
-        let name = components.last().cloned().unwrap_or_default();
         let command = Command {
-            name,
             components,
             path,
             front,
@@ -480,7 +480,6 @@ mod tests {
             Resolution::Namespace { namespace, .. } => {
                 assert_eq!(namespace.path, root.path().join("libexec").join("db"));
                 assert_eq!(namespace.components, vec!["db"]);
-                assert_eq!(namespace.name, "db");
             }
             other => panic!("expected namespace, got {other:?}"),
         }
@@ -614,7 +613,6 @@ mod tests {
             } => {
                 assert_eq!(consumed, 1);
                 assert_eq!(namespace.subcommands(), vec!["migrate"]);
-                assert_eq!(namespace.name, "db");
                 assert_eq!(namespace.components, vec!["db"]);
             }
             other => panic!("expected namespace, got {other:?}"),
