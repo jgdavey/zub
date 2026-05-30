@@ -32,7 +32,7 @@ prebuilt binary from the GitHub releases:
 Or grab a release tarball directly (Linux and Mac currently supported)
 and drop both binaries on your `PATH`:
 
-    curl -L https://github.com/jgdavey/sub/releases/download/v0.1.0/zub-0.1.0-<target>.tar.gz \
+    curl -L https://github.com/jgdavey/sub/releases/download/v0.1.1/zub-0.1.1-<target>.tar.gz \
       | tar xz && mv zub zub-scaffold ~/.local/bin/
 
 ### Building from source
@@ -305,6 +305,7 @@ loading automatically in your shell.
 - [ ] Document how to do completion
 - [ ] static completion in front-matter?
 - [ ] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
+- [ ] scaffold: allow custom root path
 
 ## License
 
