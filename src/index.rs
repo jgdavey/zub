@@ -99,6 +99,17 @@ pub enum Resolution<'a> {
 }
 
 impl Resolution<'_> {
+    fn extend_placeholders(&self, prefix: &str, line: String) -> String {
+        if line.contains("$0") {
+            let mut actual = prefix.to_string();
+            actual.push_str(" ");
+            actual.push_str(&self.full_name());
+            line.replace("$0", &actual)
+        } else {
+            line
+        }
+    }
+
     /// The resolved entry's short name (last component), if any.
     pub fn name(&self) -> Option<String> {
         match self {
@@ -107,6 +118,11 @@ impl Resolution<'_> {
             Resolution::Namespace { namespace, .. } => Some(namespace.name()),
             Resolution::NotFound => None,
         }
+    }
+
+    /// The resolved entry's full name (components space-joined), if any.
+    pub fn full_name(&self) -> String {
+        self.components().join(" ")
     }
 
     /// The resolved entry's full path components.
@@ -121,10 +137,14 @@ impl Resolution<'_> {
 
     /// The usage line, if documented. Built-in usage may contain a `<name>`
     /// placeholder for the program name.
-    pub fn usage(&self) -> Option<String> {
+    pub fn usage(&self, identity: &Identity) -> Option<String> {
         match self {
-            Resolution::Builtin(b) => Some(b.usage.to_string()),
-            Resolution::Command { command, .. } => command.front.usage.clone(),
+            Resolution::Builtin(b) => {
+                Some(self.extend_placeholders(&identity.name, b.usage.to_string()))
+            }
+            Resolution::Command { command, .. } => command.front.usage.clone().map(|usage| {
+                self.extend_placeholders(&identity.name, usage)
+            }),
             Resolution::Namespace { .. } | Resolution::NotFound => None,
         }
     }
@@ -143,10 +163,16 @@ impl Resolution<'_> {
     }
 
     /// The long-form help text, if documented.
-    pub fn help(&self) -> Option<String> {
+    pub fn help(&self, identity: &Identity) -> Option<String> {
         match self {
-            Resolution::Builtin(b) => Some(b.help.to_string()),
-            Resolution::Command { command, .. } => command.front.help.clone(),
+            Resolution::Builtin(b) => {
+                Some(self.extend_placeholders(&identity.name, b.help.to_string()))
+            },
+            Resolution::Command { command, .. } => {
+                command.front.help.clone().map(|help| {
+                    self.extend_placeholders(&identity.name, help)
+                })
+            },
             Resolution::Namespace { .. } | Resolution::NotFound => None,
         }
     }
@@ -668,11 +694,13 @@ mod tests {
 
     #[test]
     fn resolution_accessors_for_command() {
+        let root = tempdir().unwrap();
+        let id = id_for(root.path(), None);
         let index = Index::from_leaves(vec![leaf(
             "db migrate",
             FrontMatter {
                 summary: Some("run it".into()),
-                usage: Some("rush db migrate".into()),
+                usage: Some("$0".into()),
                 help: Some("long help".into()),
                 ..Default::default()
             },
@@ -680,21 +708,23 @@ mod tests {
         let res = index.resolve(&args(&["db", "migrate"]));
         assert_eq!(res.name().as_deref(), Some("migrate"));
         assert_eq!(res.components(), vec!["db", "migrate"]);
-        assert_eq!(res.usage().as_deref(), Some("rush db migrate"));
+        assert_eq!(res.usage(&id).as_deref(), Some("rush db migrate"));
         assert_eq!(res.summary().as_deref(), Some("run it"));
-        assert_eq!(res.help().as_deref(), Some("long help"));
+        assert_eq!(res.help(&id).as_deref(), Some("long help"));
     }
 
     #[test]
     fn resolution_accessors_for_namespace() {
+        let root = tempdir().unwrap();
         let index = Index::from_leaves(vec![cmd("db migrate", false), cmd("db seed", false)]);
         let res = index.resolve(&args(&["db"]));
+        let id = id_for(root.path(), None);
         assert_eq!(res.name().as_deref(), Some("db"));
         assert_eq!(res.components(), vec!["db"]);
         assert_eq!(
             res.summary().as_deref(),
             Some("2 subcommands (migrate, seed)")
         );
-        assert_eq!(res.usage(), None);
+        assert_eq!(res.usage(&id), None);
     }
 }

@@ -23,7 +23,7 @@ pub struct Builtin {
 pub const BUILTINS: &[Builtin] = &[
     Builtin {
         name: "commands",
-        usage: "<name> commands [--eval | --no-eval]",
+        usage: "$0 [--eval | --no-eval]",
         summary: "List all commands",
         help: "Lists every command, one per line. `--eval`/`--no-eval` restrict \
                to (or exclude) commands whose front-matter sets `eval: true`. \
@@ -33,7 +33,7 @@ pub const BUILTINS: &[Builtin] = &[
     },
     Builtin {
         name: "completions",
-        usage: "<name> completions <command> [args...]",
+        usage: "$0 <command> [args...]",
         summary: "Drive subcommand completion",
         help: "Called by the shell completion scripts.",
         run: completions::run,
@@ -41,23 +41,23 @@ pub const BUILTINS: &[Builtin] = &[
     },
     Builtin {
         name: "help",
-        usage: "<name> help [<command>]",
+        usage: "$0 [<command>]",
         summary: "Show help for a command",
-        help: "Run `<name> help <command>` for details.",
+        help: "Run `$0 <command>` for details.",
         run: help::run,
         complete: help::complete,
     },
     Builtin {
         name: "init",
-        usage: "<name> init [-]",
+        usage: "$0 [-]",
         summary: "Print shell integration",
-        help: "Add `eval \"$(<name> init -)\"` to your shell profile.",
+        help: "Add `eval \"$($0 -)\"` to your shell profile.",
         run: init::run,
         complete: init::complete,
     },
     Builtin {
         name: "new",
-        usage: "<name> new [--local] [--eval] <command>",
+        usage: "$0 [--local] [--eval] <command>",
         summary: "Generate a new command",
         help: "Creates a libexec script with front-matter.",
         run: new::run,
@@ -65,7 +65,7 @@ pub const BUILTINS: &[Builtin] = &[
     },
     Builtin {
         name: "source",
-        usage: "<name> source <command>",
+        usage: "$0 <command>",
         summary: "Print a command's source",
         help: "Pages the file with bat/$PAGER/cat.",
         run: source::run,

@@ -247,8 +247,8 @@ mod tests {
         let cmd_path = target.join("libexec").join("who");
         let body = fs::read_to_string(&cmd_path).unwrap();
         // Front-matter the indexer can parse, with the name substituted in.
-        assert!(body.contains("#@ summary:"));
-        assert!(body.contains("#@ usage: rush who"));
+        assert!(body.contains("#@ summary: Show who"));
+        assert!(body.contains("#@ usage: $0 [opts...]"));
         assert!(body.contains("#@ complete: true"));
         // Demonstrates --complete handling and forwards to the system `who`.
         assert!(body.contains("--complete"));

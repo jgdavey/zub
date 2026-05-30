@@ -161,13 +161,11 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             print!("{}", render_namespace_table(namespace, ctx, columns));
             0
         }
-        // Built-in usage carries a `<name>` placeholder; command usage never
-        // does, so the replacement is harmless for both.
         res => {
             let doc = Doc {
                 summary: res.summary(),
-                usage: res.usage().map(|u| u.replace("<name>", &ctx.identity.name)),
-                help: res.help(),
+                usage: res.usage(&ctx.identity),
+                help: res.help(&ctx.identity),
             };
             match render_detail(doc) {
                 Some(detail) => {
