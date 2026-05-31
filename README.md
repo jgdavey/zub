@@ -32,7 +32,7 @@ prebuilt binary from the GitHub releases:
 Or grab a release tarball directly (Linux and Mac currently supported)
 and drop both binaries on your `PATH`:
 
-    curl -L https://github.com/jgdavey/sub/releases/download/v0.1.1/zub-0.1.1-<target>.tar.gz \
+    curl -L https://github.com/jgdavey/sub/releases/download/latest/zub-<version>-<target>.tar.gz \
       | tar xz && mv zub zub-scaffold ~/.local/bin/
 
 ### Building from source
@@ -161,8 +161,8 @@ Each subcommand executable does not necessarily need to be in bash. It can be an
 
 Here's an example of adding a new subcommand. Let's say your program is named `rush`. Run:
 
-    touch libexec/rush-who
-    chmod a+x libexec/rush-who
+    touch libexec/who
+    chmod a+x libexec/who
 
 Now open up your editor, and dump in:
 
