@@ -1,31 +1,97 @@
 use std::env;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::exit;
 
+use lexopt::prelude::*;
 use zub::builtins::{self, Context};
 use zub::config;
 use zub::env_setup;
 use zub::identity;
 use zub::index::{self, Resolution};
 
-fn main() {
-    let args: Vec<String> = env::args().skip(1).collect();
+/// A parsed top-level invocation. `config` holds the `-C/--config` value (the
+/// `ZUB_CONFIG` fallback is applied later). When `help` is set, the `help`
+/// built-in runs with `rest` as its target; otherwise `rest` is the command
+/// and its arguments, captured verbatim so unrecognized flags pass straight
+/// through to the external command.
+#[derive(Debug, PartialEq)]
+struct Invocation {
+    config: Option<PathBuf>,
+    help: bool,
+    rest: Vec<String>,
+}
 
-    // Global config selector: `-C/--config <path>`, else `ZUB_CONFIG`, else error.
-    let (config_path, rest): (Option<PathBuf>, Vec<String>) = match args.split_first() {
-        Some((flag, tail)) if flag == "-C" || flag == "--config" => match tail.split_first() {
-            Some((path, more)) => (Some(PathBuf::from(path)), more.to_vec()),
-            None => {
-                eprintln!("zub: {flag} requires a path");
-                exit(2);
+/// Parse the global options (`-C/--config <path>`, `-h/--help`) up to the first
+/// positional (the command), then capture the command and everything after it
+/// untouched. A leading `-h`/`--help`, an empty command, or no command at all
+/// routes to the `help` built-in. Only the leading globals are parsed; the rest
+/// is raw, so a subcommand's own flags are never interpreted by `zub`.
+fn parse_args<I>(args: I) -> Result<Invocation, lexopt::Error>
+where
+    I: IntoIterator,
+    I::Item: Into<OsString>,
+{
+    let mut config = None;
+    let mut parser = lexopt::Parser::from_args(args);
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Short('C') | Long("config") => config = Some(parser.value()?.into()),
+            Short('h') | Long("help") => {
+                return Ok(Invocation {
+                    config,
+                    help: true,
+                    rest: raw_rest(&mut parser)?,
+                });
             }
-        },
-        _ => match env::var_os(env_setup::CONFIG) {
-            Some(p) => (Some(PathBuf::from(p)), args.clone()),
-            None => (None, args.clone()),
-        },
+            Value(cmd) => {
+                let cmd = cmd.string()?;
+                // An empty command behaves like a bare `help` request.
+                if cmd.is_empty() {
+                    return Ok(Invocation {
+                        config,
+                        help: true,
+                        rest: raw_rest(&mut parser)?,
+                    });
+                }
+                let mut rest = vec![cmd];
+                rest.extend(raw_rest(&mut parser)?);
+                return Ok(Invocation {
+                    config,
+                    help: false,
+                    rest,
+                });
+            }
+            other => return Err(other.unexpected()),
+        }
+    }
+    // No command given → help.
+    Ok(Invocation {
+        config,
+        help: true,
+        rest: Vec::new(),
+    })
+}
+
+/// Collect the parser's remaining arguments verbatim (no option parsing).
+fn raw_rest(parser: &mut lexopt::Parser) -> Result<Vec<String>, lexopt::Error> {
+    Ok(parser
+        .raw_args()?
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect())
+}
+
+fn main() {
+    let Invocation { config, help, rest } = match parse_args(env::args_os().skip(1)) {
+        Ok(invocation) => invocation,
+        Err(e) => {
+            eprintln!("zub: {e}");
+            exit(2);
+        }
     };
 
+    // `-C/--config` wins; otherwise fall back to `ZUB_CONFIG`, else error.
+    let config_path = config.or_else(|| env::var_os(env_setup::CONFIG).map(PathBuf::from));
     let Some(config_path) = config_path else {
         eprintln!(
             "zub: no config; pass -C <path> or set {}",
@@ -62,11 +128,9 @@ fn main() {
         index: &index,
     };
 
-    // No command, or an explicit help flag, runs the `help` built-in.
-    let first = rest.first().map(String::as_str);
-    if rest.is_empty() || matches!(first, Some("") | Some("-h") | Some("--help")) {
-        let help_args = if rest.is_empty() { &[][..] } else { &rest[1..] };
-        exit(builtins::run("help", help_args, &ctx));
+    // A `-h/--help`, an empty command, or no command runs the `help` built-in.
+    if help {
+        exit(builtins::run("help", &rest, &ctx));
     }
 
     match index.resolve(&rest) {
@@ -82,5 +146,89 @@ fn main() {
             eprintln!("{}: no such command `{}'", identity.name, rest.join(" "));
             exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Invocation, lexopt::Error> {
+        parse_args(args.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn no_args_runs_help() {
+        let inv = parse(&[]).unwrap();
+        assert!(inv.help);
+        assert_eq!(inv.config, None);
+        assert!(inv.rest.is_empty());
+    }
+
+    #[test]
+    fn help_flag_runs_help() {
+        assert!(parse(&["-h"]).unwrap().help);
+        assert!(parse(&["--help"]).unwrap().help);
+    }
+
+    #[test]
+    fn help_flag_carries_target() {
+        let inv = parse(&["--help", "db", "migrate"]).unwrap();
+        assert!(inv.help);
+        assert_eq!(inv.rest, vec!["db", "migrate"]);
+    }
+
+    #[test]
+    fn empty_command_runs_help() {
+        let inv = parse(&[""]).unwrap();
+        assert!(inv.help);
+    }
+
+    #[test]
+    fn config_then_command() {
+        let inv = parse(&["-C", "/c/zub.yml", "hi"]).unwrap();
+        assert_eq!(inv.config, Some(PathBuf::from("/c/zub.yml")));
+        assert!(!inv.help);
+        assert_eq!(inv.rest, vec!["hi"]);
+    }
+
+    #[test]
+    fn config_long_and_equals_forms() {
+        assert_eq!(
+            parse(&["--config", "/c", "hi"]).unwrap().config,
+            Some(PathBuf::from("/c"))
+        );
+        assert_eq!(
+            parse(&["--config=/c", "hi"]).unwrap().config,
+            Some(PathBuf::from("/c"))
+        );
+    }
+
+    #[test]
+    fn command_flags_pass_through_verbatim() {
+        let inv = parse(&["hi", "--force", "-x", "--config", "ignored"]).unwrap();
+        assert!(!inv.help);
+        // Everything after the command is raw — even `--config` and `-x`.
+        assert_eq!(inv.config, None);
+        assert_eq!(inv.rest, vec!["hi", "--force", "-x", "--config", "ignored"]);
+    }
+
+    #[test]
+    fn help_after_command_passes_through() {
+        // `--help` after the command is the command's flag, not zub's.
+        let inv = parse(&["mycmd", "--help"]).unwrap();
+        assert!(!inv.help);
+        assert_eq!(inv.rest, vec!["mycmd", "--help"]);
+    }
+
+    #[test]
+    fn missing_config_value_errors() {
+        assert!(parse(&["--config"]).is_err());
+        assert!(parse(&["-C"]).is_err());
+    }
+
+    #[test]
+    fn unknown_leading_option_errors() {
+        assert!(parse(&["--force"]).is_err());
     }
 }

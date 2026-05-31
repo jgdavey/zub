@@ -88,7 +88,9 @@ fn config_flag_without_value_errors() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("requires a path"));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("missing argument"), "got: {stderr}");
+    assert!(stderr.contains("config"), "got: {stderr}");
 }
 
 #[test]
