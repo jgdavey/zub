@@ -397,14 +397,15 @@ pub fn discover(id: &Identity) -> Index {
     dirs.push((id.root.join("libexec"), false));
 
     for (dir, is_local) in dirs {
-        scan_dir(&dir, &dir, is_local, &mut root);
+        scan_dir(&id.name, &dir, &dir, is_local, &mut root);
     }
 
     Index(root)
 }
 
 /// Recursively scan `dir`, inserting commands with names relative to `base`.
-fn scan_dir(base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String, Node>) {
+/// `name` is the program name, used only to prefix front-matter warnings.
+fn scan_dir(name: &str, base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String, Node>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -421,7 +422,7 @@ fn scan_dir(base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String,
             continue;
         };
         if meta.is_dir() {
-            scan_dir(base, &path, is_local, root);
+            scan_dir(name, base, &path, is_local, root);
             continue;
         }
         if !meta.is_file() || meta.permissions().mode() & 0o111 == 0 {
@@ -437,7 +438,15 @@ fn scan_dir(base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String,
         if components.is_empty() {
             continue;
         }
-        let front = frontmatter::parse_file(&path).unwrap_or_default();
+        // A malformed command's front-matter shouldn't break discovery: warn
+        // (so the author hears about it) and fall back to no documentation.
+        let front = match frontmatter::parse_file(&path) {
+            Ok(front) => front,
+            Err(err) => {
+                eprintln!("{name}: {}: {err}", path.display());
+                FrontMatter::default()
+            }
+        };
         let command = Command {
             components,
             path,

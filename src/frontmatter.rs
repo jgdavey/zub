@@ -24,11 +24,32 @@ pub struct FrontMatter {
     pub overrides: bool,
 }
 
+use std::fmt;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 const LEADERS: [&str; 4] = ["//", "--", "#", ";"];
+
+/// An error parsing a command's front-matter.
+#[derive(Debug)]
+pub enum ParseError {
+    /// The file could not be read.
+    Read(io::Error),
+    /// The header's marker lines were not valid YAML.
+    Yaml(yaml_serde::Error),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::Read(e) => write!(f, "{e}"),
+            ParseError::Yaml(e) => write!(f, "malformed front-matter: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 /// Strip the marker (`<leader>@` plus one optional space) from a line.
 /// Returns `(leader, remainder)` when the line is a marker line. When a leader
@@ -83,33 +104,43 @@ fn extract_block<I: Iterator<Item = String>>(mut lines: I) -> (Option<String>, S
     (interpreter, block)
 }
 
-fn parse_block(block: &str) -> FrontMatter {
+fn parse_block(block: &str) -> Result<FrontMatter, yaml_serde::Error> {
     if block.trim().is_empty() {
-        return FrontMatter::default();
+        return Ok(FrontMatter::default());
     }
-    yaml_serde::from_str(block).unwrap_or_default()
+    yaml_serde::from_str(block)
 }
 
 /// Merge the captured shebang interpreter into a parsed block.
-fn parse_with_interpreter((interpreter, block): (Option<String>, String)) -> FrontMatter {
-    let mut front = parse_block(&block);
+fn parse_with_interpreter(
+    (interpreter, block): (Option<String>, String),
+) -> Result<FrontMatter, yaml_serde::Error> {
+    let mut front = parse_block(&block)?;
     front.interpreter = interpreter;
-    front
+    Ok(front)
 }
 
-/// Parse front-matter from an in-memory string.
-pub fn parse_str(source: &str) -> FrontMatter {
+/// Parse front-matter from an in-memory string, surfacing a malformed YAML body
+/// as an error.
+pub fn try_parse_str(source: &str) -> Result<FrontMatter, yaml_serde::Error> {
     parse_with_interpreter(extract_block(source.lines().map(|l| l.to_string())))
 }
 
+/// Parse front-matter from a string, falling back to default front-matter when
+/// the YAML body is malformed. Convenience for callers that don't surface the
+/// error.
+pub fn parse_str(source: &str) -> FrontMatter {
+    try_parse_str(source).unwrap_or_default()
+}
+
 /// Parse front-matter from a file, reading only the header region (the lazy
-/// `lines()` iterator stops being polled once the block ends).
-pub fn parse_file(path: &Path) -> std::io::Result<FrontMatter> {
-    let file = File::open(path)?;
+/// `lines()` iterator stops being polled once the block ends). Surfaces a read
+/// failure or a malformed YAML body as a [`ParseError`].
+pub fn parse_file(path: &Path) -> Result<FrontMatter, ParseError> {
+    let file = File::open(path).map_err(ParseError::Read)?;
     let reader = BufReader::new(file);
-    Ok(parse_with_interpreter(extract_block(
-        reader.lines().map_while(Result::ok),
-    )))
+    parse_with_interpreter(extract_block(reader.lines().map_while(Result::ok)))
+        .map_err(ParseError::Yaml)
 }
 
 #[cfg(test)]
@@ -185,6 +216,19 @@ echo not part of header
     fn malformed_yaml_returns_default() {
         let src = "#@ : : : not yaml\n";
         assert_eq!(parse_str(src), FrontMatter::default());
+    }
+
+    #[test]
+    fn try_parse_str_surfaces_malformed_yaml() {
+        let err = try_parse_str("#@ : : : not yaml\n").unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn try_parse_str_ok_on_valid_block() {
+        let fm = try_parse_str("#!/bin/sh\n#@ summary: ok\n").unwrap();
+        assert_eq!(fm.summary.as_deref(), Some("ok"));
+        assert_eq!(fm.interpreter.as_deref(), Some("/bin/sh"));
     }
 
     #[test]

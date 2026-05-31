@@ -11,18 +11,36 @@ pub struct Config {
     pub description: Option<String>,
 }
 
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
-/// Load a config from an explicit file path. Returns `None` when the file is
-/// missing or cannot be parsed.
-pub fn load(path: &Path) -> Option<Config> {
-    if let Ok(contents) = fs::read_to_string(path) {
-        if let Ok(cfg) = yaml_serde::from_str::<Config>(&contents) {
-            return Some(cfg);
+/// An error loading a config file.
+#[derive(Debug)]
+pub enum LoadError {
+    /// The file could not be read (missing, unreadable, …).
+    Read(std::io::Error),
+    /// The file's contents were not valid YAML for a `Config`.
+    Parse(yaml_serde::Error),
+}
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoadError::Read(e) => write!(f, "{e}"),
+            LoadError::Parse(e) => write!(f, "{e}"),
         }
     }
-    None
+}
+
+impl std::error::Error for LoadError {}
+
+/// Load a config from an explicit file path. Distinguishes a read failure
+/// (missing/unreadable file) from a YAML parse error so callers can report the
+/// underlying cause.
+pub fn load(path: &Path) -> Result<Config, LoadError> {
+    let contents = fs::read_to_string(path).map_err(LoadError::Read)?;
+    yaml_serde::from_str::<Config>(&contents).map_err(LoadError::Parse)
 }
 
 #[cfg(test)]
@@ -61,9 +79,24 @@ mod tests {
     }
 
     #[test]
-    fn missing_config_returns_none() {
+    fn missing_config_is_read_error() {
         let dir = tempdir().unwrap();
-        assert!(load(&dir.path().join("nope.yml")).is_none());
+        assert!(matches!(
+            load(&dir.path().join("nope.yml")),
+            Err(LoadError::Read(_))
+        ));
+    }
+
+    #[test]
+    fn malformed_yaml_is_parse_error() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zub.yml");
+        // `name` is required, and this is not even a mapping.
+        fs::write(&path, ":\n  - not\n - valid: yaml\n").unwrap();
+        let err = load(&path).unwrap_err();
+        assert!(matches!(err, LoadError::Parse(_)));
+        // The message carries the underlying parser detail (e.g. line/column).
+        assert!(!err.to_string().is_empty());
     }
 
     #[test]

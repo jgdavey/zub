@@ -34,9 +34,15 @@ fn main() {
         exit(2);
     };
 
-    let Some(config) = config::load(&config_path) else {
-        eprintln!("zub: could not load config at {}", config_path.display());
-        exit(1);
+    let config = match config::load(&config_path) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!(
+                "zub: could not load config at {}: {err}",
+                config_path.display()
+            );
+            exit(1);
+        }
     };
 
     let Some(identity) = identity::resolve(&config_path, &config) else {
