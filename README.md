@@ -244,10 +244,14 @@ set -e
 who
 ```
 
-The recognized keys are `summary`, `usage`, `help`, `complete`, and `override`
-(unknown keys are ignored, so the format can grow without breaking older
-scripts). Because the body is real YAML, multi-line help uses a `|` block scalar
-and indentation is preserved.
+The recognized keys are `summary`, `usage`, `help`, `complete` (see
+[Autocompletion](#autocompletion)), `dynamic_help` (see [Dynamic
+help](#dynamic-help)), `eval`, and `override` (unknown keys are ignored, so the
+format can grow without breaking older scripts). Because the body is real YAML,
+multi-line help uses a `|` block scalar and indentation is preserved.
+
+The `usage` and `help` text may contain `$0`, which zub expands to the full
+command name (e.g. `rush who` or `rush db migrate`).
 
 Now, when you run `rush`, the "summary" will show up:
 
@@ -270,6 +274,52 @@ And running `rush help who` will show the "usage" line, and then the "help" bloc
 
 That's not all you get by convention with zub...
 
+## Dynamic help
+
+By default, `rush help <command>` prints only the static front-matter — the
+`usage` line, the `summary`, and the `help` block. Set `dynamic_help: true` when
+a command's help can't be written ahead of time (it depends on plugins, files,
+or the environment). zub prints the static text first, then *also* runs the
+command with `--help` appended, sending whatever it writes to stdout below the
+static help:
+
+``` bash
+#!/usr/bin/env bash
+#@ usage: $0 <env>
+#@ summary: Deploy to an environment
+#@ help: Deploy the app to a named environment.
+#@ dynamic_help: true
+set -e
+
+if [ "$1" = "--help" ]; then
+  echo "Environments:"                 # zub already prints a blank separator
+  ls "$ZUB_ROOT/share/environments"    # discovered at runtime
+  exit 0
+fi
+
+# ...real deploy logic, using "$1" as the environment...
+```
+
+`rush help deploy` then shows both halves:
+
+    Usage: rush deploy <env>
+    Summary: Deploy to an environment
+
+    Deploy the app to a named environment.
+
+    Environments:
+    production
+    staging
+
+The static `help` block is optional — with `dynamic_help: true`, a command with
+no front-matter at all is still run with `--help`. As with `--complete` below,
+the `--help` branch must `exit` so the rest of the script doesn't run.
+
+> [!NOTE]
+> zub exports `ZUB_ROOT`, `ZUB_INSTANCE` (the program name), and `ZUB_CONFIG` to
+> every subcommand, so a script can find its `share/` data or re-invoke the
+> program with `zub <other-command> ...`.
+
 ## Autocompletion
 
 Your program loves autocompletion. It's the mustard, mayo, or whatever
@@ -282,40 +332,53 @@ autocompletion:
 
 Opting into argument autocompletion takes two things: declare `complete: true`
 in your script's front-matter, and have the script handle a `--complete` flag.
-Here's an example modeled on rbenv's `whence`:
+The `complete: true` key lets zub know the script participates in completion
+without scanning its body; commands that don't declare it fall back to your
+shell's default completion (usually filenames).
+
+When the shell asks zub to complete an argument for your command, zub runs your
+script with `--complete` followed by the arguments typed so far:
+
+    rush deploy --complete <args-typed-so-far...>
+
+and sets two environment variables describing where the cursor is:
+
+- `COMP_LASTARG` — the word currently being completed (empty when the cursor is
+  at a fresh argument)
+- `COMP_PENULT` — the word just before it (handy for completing the value of a
+  `--flag <value>` pair)
+
+Your `--complete` branch prints the candidate words valid at that position, one
+per line, then exits. zub forwards them to the shell, which filters them by
+what's already typed (`$COMP_LASTARG`):
 
 ``` bash
 #!/usr/bin/env bash
-#@ summary: List something completable
+#@ usage: $0 <env> [--region <r>]
+#@ summary: Deploy to an environment
 #@ complete: true
 set -e
 
 if [ "$1" = "--complete" ]; then
-  echo --path
-  exec rbenv shims --short
+  case "$COMP_PENULT" in
+    --region) printf '%s\n' us-east us-west eu ;;       # value for --region
+    *)        printf '%s\n' staging production --region ;;
+  esac
+  exit 0
 fi
 
-# lots more bash...
+# ...real deploy logic, e.g. deploy to "$1"...
 ```
 
-The `complete: true` key lets the core know the script participates in
-completion without scanning its body — commands that don't declare it
-simply fall back to your shell's default completion (usually
-filenames).
-
-Passing the `--complete` flag to this subcommand short circuits the
-real command, and then runs another subcommand instead. The output
-from your subcommand's `--complete` run is sent to your shell's
-autocompletion handler for you, and you don't ever have to once worry
-about how any of that works!
+So `rush deploy <Tab>` offers `staging production --region`, while
+`rush deploy --region <Tab>` offers `us-east us-west eu`.
 
 > [!IMPORTANT]
-> A subcommands `--complete` handler must exit in some way (via `exec`,
-> `exit`, or some other means) to prevent the rest of the script from
-> running!
+> A command's `--complete` branch must exit (via `exit`, `exec`, or otherwise)
+> so the rest of the script doesn't run during completion.
 
-Run the `init` subcommand after you've prepared your program to get it
-loading automatically in your shell.
+Run the `init` subcommand after you've prepared your program to get it loading
+automatically in your shell.
 
 ## Roadmap
 
@@ -327,7 +390,7 @@ loading automatically in your shell.
 - [x] Set up CI building
 - [x] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
 - [x] scaffold: allow custom root path
-- [ ] Improve documentation on custom completions
+- [x] Improve documentation on custom completions
 - [ ] (possibly) Cache indexed commands (if perf becomes an issue)
 - [ ] (possibly) static completion in front-matter?
 
