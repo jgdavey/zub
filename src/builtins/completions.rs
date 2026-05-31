@@ -72,7 +72,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             "usage: {} completions command [arg1 arg2...]",
             ctx.identity.name
         );
-        return 1;
+        return crate::exit_codes::USAGE;
     }
 
     let settled = args;
@@ -96,7 +96,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             exec_args.extend(args);
             let err = Command::new(&path).args(&exec_args).exec();
             eprintln!("{}: failed to exec completion: {err}", ctx.identity.name);
-            1
+            crate::exit_codes::EXEC_FAILED
         }
         CompAction::Children(resolutions) => {
             for resolution in resolutions {
@@ -104,7 +104,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             }
             0
         }
-        CompAction::Fallback => 42,
+        CompAction::Fallback => crate::exit_codes::COMPLETION_FALLBACK,
     }
 }
 

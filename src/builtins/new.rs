@@ -76,12 +76,15 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         Ok(opts) => opts,
         Err(e) => {
             eprintln!("{}: {e}", ctx.identity.name);
-            return 1;
+            return crate::exit_codes::USAGE;
         }
     };
     let Some(command) = opts.command else {
-        eprintln!("Please provide a command name to generate");
-        return 1;
+        eprintln!(
+            "{}: please provide a command name to generate",
+            ctx.identity.name
+        );
+        return crate::exit_codes::USAGE;
     };
 
     let program = &ctx.identity.name;
@@ -100,13 +103,13 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     let display = command.replace('/', " ");
 
     if filepath.exists() {
-        eprintln!("That command already exists");
-        return 1;
+        eprintln!("{program}: command already exists: {}", filepath.display());
+        return crate::exit_codes::FAILURE;
     }
     let parent = filepath.parent().unwrap_or(&libexec);
     if let Err(e) = fs::create_dir_all(parent) {
         eprintln!("{program}: could not create {}: {e}", parent.display());
-        return 1;
+        return crate::exit_codes::FAILURE;
     }
     let body = if opts.eval {
         eval_template(program, &display)
@@ -115,7 +118,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     };
     if let Err(e) = fs::write(&filepath, body) {
         eprintln!("{program}: could not write {}: {e}", filepath.display());
-        return 1;
+        return crate::exit_codes::FAILURE;
     }
     let _ = fs::set_permissions(&filepath, fs::Permissions::from_mode(0o755));
 

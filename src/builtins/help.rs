@@ -140,7 +140,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
                 ctx.identity.name,
                 args.join(" ")
             );
-            1
+            crate::exit_codes::NOT_FOUND
         }
         Resolution::Namespace { namespace } => {
             print!("{}", render_namespace_table(namespace, ctx, columns));

@@ -205,7 +205,7 @@ fn unknown_command_errors() {
         .arg("nope")
         .output()
         .unwrap();
-    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(127)); // exit_codes::NOT_FOUND
     assert!(String::from_utf8_lossy(&out.stderr).contains("no such command `nope'"));
 }
 

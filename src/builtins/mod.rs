@@ -91,7 +91,7 @@ pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
                 "{}: built-in `{name}' not implemented yet",
                 ctx.identity.name
             );
-            1
+            crate::exit_codes::FAILURE
         }
     }
 }
@@ -104,7 +104,7 @@ pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
                 "{}: built-in `{name}' not implemented yet",
                 ctx.identity.name
             );
-            1
+            crate::exit_codes::FAILURE
         }
     }
 }

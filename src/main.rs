@@ -7,6 +7,7 @@ use lexopt::prelude::*;
 use zub::builtins::{self, Context};
 use zub::config;
 use zub::env_setup;
+use zub::exit_codes;
 use zub::identity;
 use zub::index::{self, Resolution};
 
@@ -105,7 +106,7 @@ fn main() {
         Ok(invocation) => invocation,
         Err(e) => {
             eprintln!("zub: {e}");
-            exit(2);
+            exit(exit_codes::USAGE);
         }
     };
 
@@ -122,7 +123,7 @@ fn main() {
             "zub: no config; pass -C <path> or set {}",
             env_setup::CONFIG
         );
-        exit(2);
+        exit(exit_codes::USAGE);
     };
 
     let config = match config::load(&config_path) {
@@ -132,7 +133,7 @@ fn main() {
                 "zub: could not load config at {}: {err}",
                 config_path.display()
             );
-            exit(1);
+            exit(exit_codes::FAILURE);
         }
     };
 
@@ -141,7 +142,7 @@ fn main() {
             "zub: could not resolve program root from {}",
             config_path.display()
         );
-        exit(1);
+        exit(exit_codes::FAILURE);
     };
 
     env_setup::apply(&identity);
@@ -169,7 +170,7 @@ fn main() {
         }
         Resolution::NotFound => {
             eprintln!("{}: no such command `{}'", identity.name, rest.join(" "));
-            exit(1);
+            exit(exit_codes::NOT_FOUND);
         }
     }
 }

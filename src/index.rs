@@ -466,7 +466,7 @@ pub fn exec_external(name: &str, path: &Path, args: &[String]) -> ! {
     let err = ProcessCommand::new(path).args(args).exec();
     // Only gets here if exec failed
     eprintln!("{name}: failed to exec {}: {err}", path.display());
-    std::process::exit(126);
+    std::process::exit(crate::exit_codes::EXEC_FAILED);
 }
 
 #[cfg(test)]

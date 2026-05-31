@@ -17,23 +17,24 @@ pub fn complete(args: &[String], ctx: &Context) -> i32 {
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
+    let prog = &ctx.identity.name;
     if args.is_empty() {
-        eprintln!("Please provide a command name");
-        return 1;
+        eprintln!("{prog}: please provide a command name");
+        return crate::exit_codes::USAGE;
     }
     let command = args.join(" ");
     let info = match ctx.index.resolve(args) {
         Resolution::Builtin(_) => {
-            eprintln!("Cannot show source of builtin command: {command}");
-            return 5;
+            eprintln!("{prog}: cannot show source of built-in `{command}'");
+            return crate::exit_codes::FAILURE;
         }
         Resolution::Namespace { .. } => {
-            eprintln!("Cannot show source of namespace: {command}");
-            return 1;
+            eprintln!("{prog}: cannot show source of namespace `{command}'");
+            return crate::exit_codes::FAILURE;
         }
         Resolution::NotFound => {
-            eprintln!("No such command: {command}");
-            return 2;
+            eprintln!("{prog}: no such command `{command}'");
+            return crate::exit_codes::NOT_FOUND;
         }
         Resolution::Command { command, .. } => command,
     };
@@ -43,6 +44,6 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     let chosen = bat.or(pager).unwrap_or_else(|| "cat".to_string());
 
     let err = Command::new(&chosen).arg(&info.path).exec();
-    eprintln!("{}: failed to exec {chosen}: {err}", ctx.identity.name);
-    1
+    eprintln!("{prog}: failed to exec {chosen}: {err}");
+    crate::exit_codes::EXEC_FAILED
 }

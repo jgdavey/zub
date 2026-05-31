@@ -87,7 +87,8 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             ctx.identity.root.to_string_lossy()
         );
         eprintln!();
-        return 1;
+        // Informational, not an error: this is `init`'s default output.
+        return 0;
     }
 
     // Names of commands declaring `eval: true`, for the wrapper.
