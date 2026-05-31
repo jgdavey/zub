@@ -12,26 +12,8 @@ fn which(cmd: &str) -> Option<String> {
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
-    match ctx.index.resolve(args) {
-        Resolution::NotFound => {
-            if args.is_empty() {
-                // Not using builtins here, since they have no source
-                for command in ctx.index.top_level_command_names() {
-                    println!("{}", command);
-                }
-                0
-            } else {
-                1
-            }
-        }
-        Resolution::Namespace { namespace, .. } => {
-            for s in namespace.subcommands() {
-                print!("{s}");
-            }
-            0
-        }
-        Resolution::Builtin(_) | Resolution::Command { .. } => 0,
-    }
+    // Built-ins have no source, so they are excluded from completion.
+    super::complete_command_names(args, ctx, false)
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {

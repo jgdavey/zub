@@ -1,5 +1,5 @@
 use crate::identity::Identity;
-use crate::index::Index;
+use crate::index::{Index, Resolution};
 
 pub mod commands;
 pub mod completions;
@@ -110,5 +110,92 @@ pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
             );
             1
         }
+    }
+}
+
+/// The command-name completions shared by the `help` and `source` built-ins:
+/// the lines to print (one completion per line) and the exit code. With no
+/// tokens it lists the top-level names (built-ins included only when
+/// `include_builtins`); for a namespace it lists the children; a resolved
+/// leaf/built-in offers nothing (exit 0), and unknown tokens offer nothing
+/// (exit 1, so the shell falls back).
+fn command_name_completions(
+    args: &[String],
+    index: &Index,
+    include_builtins: bool,
+) -> (Vec<String>, i32) {
+    match index.resolve(args) {
+        Resolution::NotFound if args.is_empty() => {
+            let names = if include_builtins {
+                index.top_level()
+            } else {
+                index.top_level_command_names()
+            };
+            (names, 0)
+        }
+        Resolution::NotFound => (Vec::new(), 1),
+        Resolution::Namespace { namespace } => (namespace.subcommands(), 0),
+        Resolution::Builtin(_) | Resolution::Command { .. } => (Vec::new(), 0),
+    }
+}
+
+/// Print the command-name completions for `help`/`source`, one per line, and
+/// return the exit code.
+pub(crate) fn complete_command_names(
+    args: &[String],
+    ctx: &Context,
+    include_builtins: bool,
+) -> i32 {
+    let (lines, code) = command_name_completions(args, ctx.index, include_builtins);
+    for line in lines {
+        println!("{line}");
+    }
+    code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::index::index_of;
+
+    #[test]
+    fn namespace_completion_lists_children_one_per_line() {
+        let index = index_of(&["db migrate", "db seed"]);
+        let (lines, code) = command_name_completions(&["db".to_string()], &index, true);
+        assert_eq!(lines, vec!["migrate", "seed"]);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn empty_lists_top_level_with_builtins() {
+        let index = index_of(&["who"]);
+        let (lines, code) = command_name_completions(&[], &index, true);
+        assert_eq!(code, 0);
+        assert!(lines.contains(&"who".to_string()));
+        assert!(lines.contains(&"help".to_string())); // a built-in
+    }
+
+    #[test]
+    fn empty_excludes_builtins_when_flagged() {
+        let index = index_of(&["who"]);
+        let (lines, _) = command_name_completions(&[], &index, false);
+        assert!(lines.contains(&"who".to_string()));
+        assert!(!lines.contains(&"help".to_string()));
+    }
+
+    #[test]
+    fn unknown_tokens_offer_nothing_with_error_code() {
+        let index = index_of(&["who"]);
+        let (lines, code) = command_name_completions(&["nope".to_string()], &index, true);
+        assert!(lines.is_empty());
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn resolved_leaf_offers_nothing() {
+        let index = index_of(&["who"]);
+        let (lines, code) = command_name_completions(&["who".to_string()], &index, true);
+        assert!(lines.is_empty());
+        assert_eq!(code, 0);
     }
 }

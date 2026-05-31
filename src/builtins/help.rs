@@ -121,25 +121,8 @@ fn terminal_columns() -> usize {
 }
 
 pub fn complete(args: &[String], ctx: &Context) -> i32 {
-    match ctx.index.resolve(args) {
-        Resolution::NotFound => {
-            if args.is_empty() {
-                for name in ctx.index.top_level() {
-                    println!("{name}");
-                }
-                0
-            } else {
-                1
-            }
-        }
-        Resolution::Namespace { namespace, .. } => {
-            for s in namespace.subcommands() {
-                print!("{s}");
-            }
-            0
-        }
-        Resolution::Builtin(_) | Resolution::Command { .. } => 0,
-    }
+    // `help` completes built-ins too, since it documents them.
+    super::complete_command_names(args, ctx, true)
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
