@@ -1,4 +1,5 @@
 use crate::builtins::Context;
+use lexopt::prelude::*;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -9,28 +10,24 @@ pub struct Options {
     pub command: Option<String>,
 }
 
-pub fn parse_flags(args: &[String]) -> Options {
+/// Parse `new`'s flags: `-l`/`--local`, `--eval`, and the lone positional
+/// command name (use `--` before a name that starts with a dash).
+pub fn parse_flags(args: &[String]) -> Result<Options, lexopt::Error> {
     let mut opts = Options {
         local: false,
         eval: false,
         command: None,
     };
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "-l" | "--local" => opts.local = true,
-            "--eval" => opts.eval = true,
-            "--" => {
-                opts.command = iter.next().cloned();
-                break;
-            }
-            other => {
-                opts.command = Some(other.to_string());
-                break;
-            }
+    let mut parser = lexopt::Parser::from_args(args.iter().cloned());
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Short('l') | Long("local") => opts.local = true,
+            Long("eval") => opts.eval = true,
+            Value(val) if opts.command.is_none() => opts.command = Some(val.string()?),
+            _ => return Err(arg.unexpected()),
         }
     }
-    opts
+    Ok(opts)
 }
 
 /// The base directory for a `--local` command: `<cwd>/.<program>`. Must match
@@ -75,7 +72,13 @@ pub fn complete(_args: &[String], _ctx: &Context) -> i32 {
 }
 
 pub fn run(args: &[String], ctx: &Context) -> i32 {
-    let opts = parse_flags(args);
+    let opts = match parse_flags(args) {
+        Ok(opts) => opts,
+        Err(e) => {
+            eprintln!("{}: {e}", ctx.identity.name);
+            return 1;
+        }
+    };
     let Some(command) = opts.command else {
         eprintln!("Please provide a command name to generate");
         return 1;
@@ -204,7 +207,8 @@ mod tests {
             "--local".to_string(),
             "--eval".to_string(),
             "greet".to_string(),
-        ]);
+        ])
+        .unwrap();
         assert!(opts.local);
         assert!(opts.eval);
         assert_eq!(opts.command.as_deref(), Some("greet"));
@@ -220,7 +224,7 @@ mod tests {
 
     #[test]
     fn parse_flags_requires_command() {
-        let opts = parse_flags(&["--local".to_string()]);
+        let opts = parse_flags(&["--local".to_string()]).unwrap();
         assert_eq!(opts.command, None);
     }
 

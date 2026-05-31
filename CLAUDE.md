@@ -48,7 +48,7 @@ A command whose front-matter sets `eval: true` is a shell-eval command (its stdo
 ## Conventions
 
 - **Unix-only.** Relies on `std::os::unix::process::CommandExt` for `exec`/`arg0`.
-- **No CLI framework.** Argument dispatch is hand-rolled so unrecognized flags pass straight to external commands.
+- **Dispatch is hand-rolled; bounded sub-parsers use `lexopt`.** The `main.rs` router and the pass-through built-ins (`help`/`source`/`completions`) parse args by hand so unrecognized flags pass straight to external commands. Where a command takes a *closed* set of flags — `zub-scaffold` (`parse_args`) and the `new` built-in (`parse_flags`) — parsing goes through `lexopt` (a tiny, zero-dependency parser); both return `Result<_, lexopt::Error>`. Don't reach for a heavier framework like `clap`.
 - **Test style.** Unit tests live inline (`#[cfg(test)] mod tests`) next to each module; pure functions (`parse_str`, `resolve`) are favored so logic is testable without filesystem or process effects. `tests/dispatch.rs` builds temp program trees and runs the compiled binary end-to-end via `CARGO_BIN_EXE_zub`.
 
 ## Scaffolding & templates

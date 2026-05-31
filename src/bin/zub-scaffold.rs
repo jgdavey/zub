@@ -1,8 +1,10 @@
 use std::env;
+use std::ffi::OsString;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
+use lexopt::prelude::*;
 use zub::scaffold::{self, Mode};
 
 const USAGE: &str = "usage: zub-scaffold <program> [--dir <path>] [--regenerate[=clobber]]";
@@ -17,29 +19,33 @@ struct Args {
     dir: Option<String>,
 }
 
-/// Parse the argument list (everything after the binary name). Returns a
-/// human-readable error message on bad input.
-fn parse_args<I: Iterator<Item = String>>(args: I) -> Result<Args, String> {
+/// Parse the argument list (everything after the binary name). `--regenerate`
+/// takes an optional `=clobber`; `--dir` takes a value; the lone positional is
+/// the program name.
+fn parse_args<I>(args: I) -> Result<Args, lexopt::Error>
+where
+    I: IntoIterator,
+    I::Item: Into<OsString>,
+{
     let mut name: Option<String> = None;
     let mut mode = Mode::Normal;
     let mut dir: Option<String> = None;
-    let mut args = args;
 
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--regenerate" => mode = Mode::Regenerate,
-            "--regenerate=clobber" => mode = Mode::Clobber,
-            "--dir" => {
-                dir = Some(args.next().ok_or("--dir requires a path")?);
+    let mut parser = lexopt::Parser::from_args(args);
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Long("dir") => dir = Some(parser.value()?.string()?),
+            Long("regenerate") => {
+                mode = match parser.optional_value() {
+                    None => Mode::Regenerate,
+                    Some(v) => match v.string()?.as_str() {
+                        "clobber" => Mode::Clobber,
+                        other => return Err(format!("invalid --regenerate value `{other}`").into()),
+                    },
+                };
             }
-            other if other.starts_with("--dir=") => {
-                dir = Some(other.trim_start_matches("--dir=").to_string());
-            }
-            other if other.starts_with("--") => {
-                return Err(format!("unrecognized option `{other}`"));
-            }
-            _ if name.is_none() => name = Some(arg),
-            _ => return Err(format!("unexpected argument `{arg}`")),
+            Value(val) if name.is_none() => name = Some(val.string()?),
+            _ => return Err(arg.unexpected()),
         }
     }
 
@@ -108,7 +114,7 @@ fn prompt_replace(path: &Path) -> bool {
 mod tests {
     use super::*;
 
-    fn parse(args: &[&str]) -> Result<Args, String> {
+    fn parse(args: &[&str]) -> Result<Args, lexopt::Error> {
         parse_args(args.iter().map(|s| s.to_string()))
     }
 
@@ -135,10 +141,8 @@ mod tests {
 
     #[test]
     fn dir_without_value_errors() {
-        assert_eq!(
-            parse(&["rush", "--dir"]).unwrap_err(),
-            "--dir requires a path"
-        );
+        let msg = parse(&["rush", "--dir"]).unwrap_err().to_string();
+        assert!(msg.contains("dir"), "got: {msg}");
     }
 
     #[test]
@@ -163,23 +167,22 @@ mod tests {
 
     #[test]
     fn missing_name_errors() {
-        assert_eq!(parse(&[]).unwrap_err(), "missing program name");
-        assert_eq!(parse(&["--dir", "x"]).unwrap_err(), "missing program name");
+        assert_eq!(parse(&[]).unwrap_err().to_string(), "missing program name");
+        assert_eq!(
+            parse(&["--dir", "x"]).unwrap_err().to_string(),
+            "missing program name"
+        );
     }
 
     #[test]
     fn unrecognized_option_errors() {
-        assert_eq!(
-            parse(&["rush", "--nope"]).unwrap_err(),
-            "unrecognized option `--nope`"
-        );
+        let msg = parse(&["rush", "--nope"]).unwrap_err().to_string();
+        assert!(msg.contains("nope"), "got: {msg}");
     }
 
     #[test]
     fn extra_positional_errors() {
-        assert_eq!(
-            parse(&["rush", "extra"]).unwrap_err(),
-            "unexpected argument `extra`"
-        );
+        let msg = parse(&["rush", "extra"]).unwrap_err().to_string();
+        assert!(msg.contains("extra"), "got: {msg}");
     }
 }
