@@ -17,11 +17,13 @@ struct Args {
     /// The target directory to create the program in. When `None`, the program
     /// is created at `<cwd>/<name>`.
     dir: Option<String>,
+    /// `-V/--version` was given: print the version and exit (no name required).
+    version: bool,
 }
 
-/// Parse the argument list (everything after the binary name). `--regenerate`
-/// takes an optional `=clobber`; `--dir` takes a value; the lone positional is
-/// the program name.
+/// Parse the argument list (everything after the binary name). `-V/--version`
+/// short-circuits; `--regenerate` takes an optional `=clobber`; `--dir` takes a
+/// value; the lone positional is the program name.
 fn parse_args<I>(args: I) -> Result<Args, lexopt::Error>
 where
     I: IntoIterator,
@@ -34,6 +36,14 @@ where
     let mut parser = lexopt::Parser::from_args(args);
     while let Some(arg) = parser.next()? {
         match arg {
+            Short('V') | Long("version") => {
+                return Ok(Args {
+                    name: name.unwrap_or_default(),
+                    mode,
+                    dir,
+                    version: true,
+                });
+            }
             Long("dir") => dir = Some(parser.value()?.string()?),
             Long("regenerate") => {
                 mode = match parser.optional_value() {
@@ -50,7 +60,12 @@ where
     }
 
     let name = name.ok_or("missing program name")?;
-    Ok(Args { name, mode, dir })
+    Ok(Args {
+        name,
+        mode,
+        dir,
+        version: false,
+    })
 }
 
 fn main() {
@@ -61,7 +76,18 @@ fn main() {
             exit(1);
         }
     };
-    let Args { name, mode, dir } = parsed;
+    let Args {
+        name,
+        mode,
+        dir,
+        version,
+    } = parsed;
+
+    // `-V/--version` prints the version and exits, before anything else.
+    if version {
+        println!("zub-scaffold {}", env!("CARGO_PKG_VERSION"));
+        exit(0);
+    }
 
     // `--dir` overrides the target (a relative path is taken against the cwd);
     // otherwise the program is created at `<cwd>/<name>`.
@@ -124,6 +150,13 @@ mod tests {
         assert_eq!(a.name, "rush");
         assert_eq!(a.mode, Mode::Normal);
         assert_eq!(a.dir, None);
+        assert!(!a.version);
+    }
+
+    #[test]
+    fn version_flag_needs_no_name() {
+        assert!(parse(&["-V"]).unwrap().version);
+        assert!(parse(&["--version"]).unwrap().version);
     }
 
     #[test]

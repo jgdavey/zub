@@ -80,6 +80,25 @@ fn missing_config_errors() {
 }
 
 #[test]
+fn version_flag_prints_version_without_config() {
+    let bin = env!("CARGO_BIN_EXE_zub");
+    for flag in ["-V", "--version"] {
+        let out = Command::new(bin)
+            .arg(flag)
+            .env_remove("ZUB_CONFIG") // no config needed for --version
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{flag} should exit 0");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("zub"), "{flag} got: {stdout}");
+        assert!(
+            stdout.contains(env!("CARGO_PKG_VERSION")),
+            "{flag} got: {stdout}"
+        );
+    }
+}
+
+#[test]
 fn config_flag_without_value_errors() {
     let bin = env!("CARGO_BIN_EXE_zub");
     let out = Command::new(bin)

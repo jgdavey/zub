@@ -60,6 +60,8 @@ it somewhere else (the program name still comes from the positional argument):
 
     zub-scaffold rush --dir /opt/tools/rush   # create the tree at /opt/tools/rush
 
+`zub-scaffold -V` (or `--version`) prints its version and exits.
+
 By default `zub-scaffold` refuses to touch an existing directory. To refresh the
 generated files of a program you already have — after upgrading `zub`, say — run
 it with `--regenerate` from the program's **parent** directory:
@@ -150,6 +152,8 @@ program tree anywhere and it keeps working. You can also invoke
 `zub -C /path/to/zub.yml <subcommand>` directly, or export `ZUB_CONFIG=/path/to/zub.yml`
 so a bare `zub <subcommand>` knows which program to run. (An explicit `-C` always
 wins over `ZUB_CONFIG`.)
+
+`zub -V` (or `--version`) prints the `zub` binary's version and exits.
 
 ## Subcommands
 

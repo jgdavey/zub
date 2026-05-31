@@ -11,20 +11,22 @@ use zub::identity;
 use zub::index::{self, Resolution};
 
 /// A parsed top-level invocation. `config` holds the `-C/--config` value (the
-/// `ZUB_CONFIG` fallback is applied later). When `help` is set, the `help`
-/// built-in runs with `rest` as its target; otherwise `rest` is the command
-/// and its arguments, captured verbatim so unrecognized flags pass straight
-/// through to the external command.
+/// `ZUB_CONFIG` fallback is applied later). When `version` is set, print zub's
+/// version and exit; when `help` is set, the `help` built-in runs with `rest`
+/// as its target; otherwise `rest` is the command and its arguments, captured
+/// verbatim so unrecognized flags pass straight through to the external command.
 #[derive(Debug, PartialEq)]
 struct Invocation {
     config: Option<PathBuf>,
+    version: bool,
     help: bool,
     rest: Vec<String>,
 }
 
-/// Parse the global options (`-C/--config <path>`, `-h/--help`) up to the first
-/// positional (the command), then capture the command and everything after it
-/// untouched. A leading `-h`/`--help`, an empty command, or no command at all
+/// Parse the global options (`-C/--config <path>`, `-h/--help`, `-V/--version`)
+/// up to the first positional (the command), then capture the command and
+/// everything after it untouched. A leading `-V`/`--version` requests the
+/// version; a leading `-h`/`--help`, an empty command, or no command at all
 /// routes to the `help` built-in. Only the leading globals are parsed; the rest
 /// is raw, so a subcommand's own flags are never interpreted by `zub`.
 fn parse_args<I>(args: I) -> Result<Invocation, lexopt::Error>
@@ -37,9 +39,18 @@ where
     while let Some(arg) = parser.next()? {
         match arg {
             Short('C') | Long("config") => config = Some(parser.value()?.into()),
+            Short('V') | Long("version") => {
+                return Ok(Invocation {
+                    config,
+                    version: true,
+                    help: false,
+                    rest: raw_rest(&mut parser)?,
+                });
+            }
             Short('h') | Long("help") => {
                 return Ok(Invocation {
                     config,
+                    version: false,
                     help: true,
                     rest: raw_rest(&mut parser)?,
                 });
@@ -50,6 +61,7 @@ where
                 if cmd.is_empty() {
                     return Ok(Invocation {
                         config,
+                        version: false,
                         help: true,
                         rest: raw_rest(&mut parser)?,
                     });
@@ -58,6 +70,7 @@ where
                 rest.extend(raw_rest(&mut parser)?);
                 return Ok(Invocation {
                     config,
+                    version: false,
                     help: false,
                     rest,
                 });
@@ -68,6 +81,7 @@ where
     // No command given → help.
     Ok(Invocation {
         config,
+        version: false,
         help: true,
         rest: Vec::new(),
     })
@@ -82,13 +96,24 @@ fn raw_rest(parser: &mut lexopt::Parser) -> Result<Vec<String>, lexopt::Error> {
 }
 
 fn main() {
-    let Invocation { config, help, rest } = match parse_args(env::args_os().skip(1)) {
+    let Invocation {
+        config,
+        version,
+        help,
+        rest,
+    } = match parse_args(env::args_os().skip(1)) {
         Ok(invocation) => invocation,
         Err(e) => {
             eprintln!("zub: {e}");
             exit(2);
         }
     };
+
+    // `-V/--version` prints zub's own version and exits, before any config.
+    if version {
+        println!("zub {}", env!("CARGO_PKG_VERSION"));
+        exit(0);
+    }
 
     // `-C/--config` wins; otherwise fall back to `ZUB_CONFIG`, else error.
     let config_path = config.or_else(|| env::var_os(env_setup::CONFIG).map(PathBuf::from));
@@ -169,6 +194,20 @@ mod tests {
     fn help_flag_runs_help() {
         assert!(parse(&["-h"]).unwrap().help);
         assert!(parse(&["--help"]).unwrap().help);
+    }
+
+    #[test]
+    fn version_flag_requests_version() {
+        assert!(parse(&["-V"]).unwrap().version);
+        assert!(parse(&["--version"]).unwrap().version);
+    }
+
+    #[test]
+    fn version_after_command_passes_through() {
+        // `-V` after the command is the command's flag, not zub's.
+        let inv = parse(&["mycmd", "-V"]).unwrap();
+        assert!(!inv.version);
+        assert_eq!(inv.rest, vec!["mycmd", "-V"]);
     }
 
     #[test]
