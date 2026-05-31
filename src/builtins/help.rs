@@ -166,8 +166,8 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         res => {
             let doc = Doc {
                 summary: res.summary(),
-                usage: res.usage(&ctx.identity),
-                help: res.help(&ctx.identity),
+                usage: res.usage(ctx.identity),
+                help: res.help(ctx.identity),
             };
             // A `dynamic_help` command appends its own `--help` output, so it is
             // shown even when it has no static front-matter to render.

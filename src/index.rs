@@ -102,7 +102,7 @@ impl Resolution<'_> {
     fn extend_placeholders(&self, prefix: &str, line: String) -> String {
         if line.contains("$0") {
             let mut actual = prefix.to_string();
-            actual.push_str(" ");
+            actual.push(' ');
             actual.push_str(&self.full_name());
             line.replace("$0", &actual)
         } else {
@@ -142,9 +142,11 @@ impl Resolution<'_> {
             Resolution::Builtin(b) => {
                 Some(self.extend_placeholders(&identity.name, b.usage.to_string()))
             }
-            Resolution::Command { command, .. } => command.front.usage.clone().map(|usage| {
-                self.extend_placeholders(&identity.name, usage)
-            }),
+            Resolution::Command { command, .. } => command
+                .front
+                .usage
+                .clone()
+                .map(|usage| self.extend_placeholders(&identity.name, usage)),
             Resolution::Namespace { .. } | Resolution::NotFound => None,
         }
     }
@@ -167,12 +169,12 @@ impl Resolution<'_> {
         match self {
             Resolution::Builtin(b) => {
                 Some(self.extend_placeholders(&identity.name, b.help.to_string()))
-            },
-            Resolution::Command { command, .. } => {
-                command.front.help.clone().map(|help| {
-                    self.extend_placeholders(&identity.name, help)
-                })
-            },
+            }
+            Resolution::Command { command, .. } => command
+                .front
+                .help
+                .clone()
+                .map(|help| self.extend_placeholders(&identity.name, help)),
             Resolution::Namespace { .. } | Resolution::NotFound => None,
         }
     }
