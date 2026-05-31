@@ -126,20 +126,12 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::{CommandRoot, Identity};
+    use crate::identity::{fixture, CommandRoot};
     use crate::index::Index;
     use tempfile::tempdir;
 
     fn run_in(root: &Path, args: &[&str]) {
-        let id = Identity {
-            name: "rush".into(),
-            root: root.to_path_buf(),
-            command_roots: vec![CommandRoot {
-                path: root.join("libexec"),
-                is_local: false,
-            }],
-            config_path: PathBuf::new(),
-        };
+        let id = fixture("rush", root);
         let index = Index::default();
         let ctx = Context {
             identity: &id,
@@ -165,15 +157,12 @@ mod tests {
     #[test]
     fn run_writes_into_primary_command_root() {
         let root = tempdir().unwrap();
-        let id = Identity {
-            name: "rush".into(),
-            root: root.path().to_path_buf(),
-            command_roots: vec![CommandRoot {
-                path: root.path().join("cmds"),
-                is_local: false,
-            }],
-            config_path: PathBuf::new(),
-        };
+        let mut id = fixture("rush", root.path());
+        // Commands are created in the primary (first non-local) root.
+        id.command_roots = vec![CommandRoot {
+            path: root.path().join("cmds"),
+            is_local: false,
+        }];
         let index = Index::default();
         let ctx = Context {
             identity: &id,

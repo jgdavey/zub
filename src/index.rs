@@ -489,22 +489,14 @@ mod tests {
     /// root `libexec` (the base layer) plus, when `local` is given, a local
     /// `<local>/libexec` overlay (highest precedence, listed last).
     fn id_for(root: &std::path::Path, local: Option<PathBuf>) -> Identity {
-        let mut command_roots = vec![CommandRoot {
-            path: root.join("libexec"),
-            is_local: false,
-        }];
+        let mut id = crate::identity::fixture("rush", root);
         if let Some(local) = local {
-            command_roots.push(CommandRoot {
+            id.command_roots.push(CommandRoot {
                 path: local.join("libexec"),
                 is_local: true,
             });
         }
-        Identity {
-            name: "rush".into(),
-            root: root.to_path_buf(),
-            command_roots,
-            config_path: PathBuf::new(),
-        }
+        id
     }
 
     fn args(s: &[&str]) -> Vec<String> {

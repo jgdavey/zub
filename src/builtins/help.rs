@@ -197,20 +197,11 @@ fn run_dynamic_help(command: &Command, printed: bool) -> i32 {
 mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
-    use crate::identity::{CommandRoot, Identity};
+    use crate::identity::{fixture, Identity};
     use crate::index::{self, Index};
-    use std::path::PathBuf;
 
     fn ctx() -> (Identity, Index) {
-        let id = Identity {
-            name: "rush".into(),
-            root: PathBuf::from("/r"),
-            command_roots: vec![CommandRoot {
-                path: PathBuf::from("/r/libexec"),
-                is_local: false,
-            }],
-            config_path: PathBuf::new(),
-        };
+        let id = fixture("rush", "/r");
         let cmds = vec![index::leaf(
             "who",
             FrontMatter {
@@ -224,15 +215,7 @@ mod tests {
     }
 
     fn ctx_named(specs: &[(&str, Option<&str>)]) -> (Identity, Index) {
-        let id = Identity {
-            name: "rush".into(),
-            root: PathBuf::from("/r"),
-            command_roots: vec![CommandRoot {
-                path: PathBuf::from("/r/libexec"),
-                is_local: false,
-            }],
-            config_path: PathBuf::new(),
-        };
+        let id = fixture("rush", "/r");
         let cmds = specs
             .iter()
             .map(|(name, summary)| {

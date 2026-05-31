@@ -121,7 +121,7 @@ fn print_summaries(ctx: &Context) -> i32 {
 mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
-    use crate::identity::{CommandRoot, Identity};
+    use crate::identity::fixture;
     use crate::index::{self, Index};
     use std::path::PathBuf;
 
@@ -142,15 +142,7 @@ mod tests {
     }
 
     fn with_ctx<R>(index: &Index, f: impl FnOnce(&Context) -> R) -> R {
-        let id = Identity {
-            name: "rush".into(),
-            root: PathBuf::from("/r"),
-            command_roots: vec![CommandRoot {
-                path: PathBuf::from("/r/libexec"),
-                is_local: false,
-            }],
-            config_path: PathBuf::new(),
-        };
+        let id = fixture("rush", "/r");
         let ctx = Context {
             identity: &id,
             index,

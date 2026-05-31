@@ -107,6 +107,24 @@ impl Identity {
     }
 }
 
+/// Test helper: an `Identity` for `name` rooted at `root`, with the default
+/// single command root (`<root>/libexec`) and config at `<root>/zub.yml`.
+/// Shared across the crate's test modules so they don't each re-spell it;
+/// mutate the returned fields for cases that need different roots.
+#[cfg(test)]
+pub(crate) fn fixture(name: &str, root: impl AsRef<Path>) -> Identity {
+    let root = root.as_ref().to_path_buf();
+    Identity {
+        command_roots: vec![CommandRoot {
+            path: root.join("libexec"),
+            is_local: false,
+        }],
+        config_path: root.join("zub.yml"),
+        name: name.to_string(),
+        root,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

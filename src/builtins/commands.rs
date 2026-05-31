@@ -46,9 +46,8 @@ pub fn complete(args: &[String], _ctx: &Context) -> i32 {
 mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
-    use crate::identity::{CommandRoot, Identity};
+    use crate::identity::{fixture, Identity};
     use crate::index::{self, Index};
-    use std::path::PathBuf;
 
     fn ctx_with(names: &[&str]) -> (Identity, Index) {
         let pairs: Vec<(&str, bool)> = names.iter().map(|n| (*n, false)).collect();
@@ -56,15 +55,7 @@ mod tests {
     }
 
     fn ctx_with_eval(cmds: &[(&str, bool)]) -> (Identity, Index) {
-        let id = Identity {
-            name: "rush".into(),
-            root: PathBuf::from("/r"),
-            command_roots: vec![CommandRoot {
-                path: PathBuf::from("/r/libexec"),
-                is_local: false,
-            }],
-            config_path: PathBuf::new(),
-        };
+        let id = fixture("rush", "/r");
         let cmds = cmds
             .iter()
             .map(|(n, eval)| {

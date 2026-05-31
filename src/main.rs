@@ -111,7 +111,7 @@ fn main() {
 
     // `-V/--version` prints zub's own version and exits, before any config.
     if version {
-        println!("zub {}", env!("CARGO_PKG_VERSION"));
+        println!("zub {}", zub::version());
         exit(0);
     }
 

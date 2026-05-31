@@ -85,7 +85,7 @@ fn main() {
 
     // `-V/--version` prints the version and exits, before anything else.
     if version {
-        println!("zub-scaffold {}", env!("CARGO_PKG_VERSION"));
+        println!("zub-scaffold {}", zub::version());
         exit(0);
     }
 
