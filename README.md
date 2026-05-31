@@ -55,6 +55,11 @@ command, and an empty `share` directory. There's no source-templating or build
 step — your program's identity comes entirely from `zub.yml`. (Give it a better
 name than `rush`!)
 
+By default the tree is created at `<cwd>/<name>`. Pass `--dir <path>` to create
+it somewhere else (the program name still comes from the positional argument):
+
+    zub-scaffold rush --dir /opt/tools/rush   # create the tree at /opt/tools/rush
+
 By default `zub-scaffold` refuses to touch an existing directory. To refresh the
 generated files of a program you already have — after upgrading `zub`, say — run
 it with `--regenerate` from the program's **parent** directory:
