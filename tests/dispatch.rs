@@ -188,26 +188,44 @@ fn unknown_command_errors() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("no such command `nope'"));
 }
 
+/// Write an executable at `<root>/<dir>/<rel>`.
+fn write_cmd_in(root: &Path, dir: &str, rel: &str, body: &str) {
+    let path = root.join(dir).join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, body).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
 #[test]
-fn dispatches_command_from_configured_libexec_dir() {
-    // Commands live in `cmds`, not the default `libexec`.
+fn command_roots_overlay_later_root_wins() {
+    // Two roots, base then overlay (lowest precedence first). `hi` is defined in
+    // both — the overlay must win — and `base-only` only in the base.
     let dir = tempdir().unwrap();
-    fs::write(dir.path().join("zub.yml"), "name: rush\nlibexec: cmds\n").unwrap();
-    let cmd = dir.path().join("cmds").join("hi");
-    fs::create_dir_all(cmd.parent().unwrap()).unwrap();
-    fs::write(&cmd, "#!/bin/sh\necho hello-from-cmds\n").unwrap();
-    fs::set_permissions(&cmd, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(
+        dir.path().join("zub.yml"),
+        "name: rush\ncommand_roots:\n  - $ZUB_ROOT/base\n  - $ZUB_ROOT/over\n",
+    )
+    .unwrap();
+    write_cmd_in(dir.path(), "base", "hi", "#!/bin/sh\necho from-base\n");
+    write_cmd_in(
+        dir.path(),
+        "base",
+        "base-only",
+        "#!/bin/sh\necho base-only\n",
+    );
+    write_cmd_in(dir.path(), "over", "hi", "#!/bin/sh\necho from-over\n");
 
     let bin = env!("CARGO_BIN_EXE_zub");
-    let out = Command::new(bin)
-        .arg("-C")
-        .arg(config_path(dir.path()))
-        .arg("hi")
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "hello-from-cmds"
-    );
+    let run = |cmd: &str| {
+        let out = Command::new(bin)
+            .arg("-C")
+            .arg(config_path(dir.path()))
+            .arg(cmd)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    assert_eq!(run("hi"), "from-over"); // overlay wins the collision
+    assert_eq!(run("base-only"), "base-only"); // base still scanned
 }

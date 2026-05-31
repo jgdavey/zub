@@ -34,7 +34,7 @@ pub fn parse_flags(args: &[String]) -> Options {
 }
 
 /// The base directory for a `--local` command: `<cwd>/.<program>`. Must match
-/// the convention `identity::local_root_in` discovers (`.<name>/libexec`), so a
+/// the default local command root (`$PWD/.<name>/libexec`), so a
 /// locally-generated command is actually found at dispatch time.
 fn local_base_dir(cwd: &Path, program: &str) -> PathBuf {
     cwd.join(format!(".{program}"))
@@ -82,13 +82,13 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     };
 
     let program = &ctx.identity.name;
-    // A `--local` command goes in the per-directory override (`.<name>/libexec`,
-    // the fixed convention `identity::local_root_in` discovers); otherwise it
-    // goes in the program's configured libexec dir.
+    // A `--local` command goes in the per-directory overlay (`.<name>/libexec`,
+    // the default local command root); otherwise it goes in the program's
+    // primary (non-local) command root.
     let libexec: PathBuf = if opts.local {
         local_base_dir(&std::env::current_dir().unwrap_or_default(), program).join("libexec")
     } else {
-        ctx.identity.libexec.clone()
+        ctx.identity.new_command_dir()
     };
     // A `/` in the command name nests the file; the displayed (space-joined)
     // name is what the user types: `new db/migrate` -> `libexec/db/migrate`,
@@ -123,7 +123,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::Identity;
+    use crate::identity::{CommandRoot, Identity};
     use crate::index::Index;
     use tempfile::tempdir;
 
@@ -131,8 +131,10 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: root.to_path_buf(),
-            libexec: root.join("libexec"),
-            local_root: None,
+            command_roots: vec![CommandRoot {
+                path: root.join("libexec"),
+                is_local: false,
+            }],
             config_path: PathBuf::new(),
         };
         let index = Index::default();
@@ -158,13 +160,15 @@ mod tests {
     }
 
     #[test]
-    fn run_writes_into_configured_libexec_dir() {
+    fn run_writes_into_primary_command_root() {
         let root = tempdir().unwrap();
         let id = Identity {
             name: "rush".into(),
             root: root.path().to_path_buf(),
-            libexec: root.path().join("cmds"),
-            local_root: None,
+            command_roots: vec![CommandRoot {
+                path: root.path().join("cmds"),
+                is_local: false,
+            }],
             config_path: PathBuf::new(),
         };
         let index = Index::default();

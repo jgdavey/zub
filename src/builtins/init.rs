@@ -99,7 +99,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::Identity;
+    use crate::identity::{CommandRoot, Identity};
     use crate::index::Index;
     use std::path::PathBuf;
 
@@ -107,8 +107,10 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
-            libexec: PathBuf::from("/opt/rush/libexec"),
-            local_root: None,
+            command_roots: vec![CommandRoot {
+                path: PathBuf::from("/opt/rush/libexec"),
+                is_local: false,
+            }],
             config_path: PathBuf::from("/opt/rush/zub.yml"),
         };
         (id, Index::default())

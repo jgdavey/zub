@@ -214,7 +214,7 @@ fn run_dynamic_help(command: &Command, printed: bool) -> i32 {
 mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
-    use crate::identity::Identity;
+    use crate::identity::{CommandRoot, Identity};
     use crate::index::{self, Index};
     use std::path::PathBuf;
 
@@ -222,8 +222,10 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
-            libexec: PathBuf::from("/r/libexec"),
-            local_root: None,
+            command_roots: vec![CommandRoot {
+                path: PathBuf::from("/r/libexec"),
+                is_local: false,
+            }],
             config_path: PathBuf::new(),
         };
         let cmds = vec![index::leaf(
@@ -242,8 +244,10 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
-            libexec: PathBuf::from("/r/libexec"),
-            local_root: None,
+            command_roots: vec![CommandRoot {
+                path: PathBuf::from("/r/libexec"),
+                is_local: false,
+            }],
             config_path: PathBuf::new(),
         };
         let cmds = specs

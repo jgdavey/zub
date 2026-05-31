@@ -113,14 +113,22 @@ name: rush
 # optional:
 version: 0.1.0
 description: A delicious way to organize programs
-libexec: libexec      # where subcommands are collected (default: libexec)
+# where subcommands are collected (defaults to the two entries below):
+command_roots:
+  - $ZUB_ROOT/libexec
+  - $PWD/.$ZUB_INSTANCE/libexec
 ```
 
-By default subcommands are collected from a `libexec` directory next to
-`zub.yml`. Set `libexec` to collect them from somewhere else: a relative path is
-resolved against the program root (the same base as the default), and an
-absolute path is used as-is. For example, `libexec: src/commands` or
-`libexec: /usr/lib/rush/commands`.
+By default subcommands are collected from two directories: `<root>/libexec`
+(the program itself) and `.<name>/libexec` in your current working directory (a
+per-directory overlay). Set `command_roots` to change this — it's an **ordered,
+lowest-precedence-first** list, so a command in a later root overrides the same
+name in an earlier one. Each entry may use the pseudo-variables `$ZUB_ROOT` (the
+program root), `$ZUB_INSTANCE` (the program name), and `$PWD` (your current
+directory); a bare relative path is resolved against the program root, and a
+nonexistent directory is simply skipped. A root that references `$PWD` is
+treated as working-directory-local, and its commands are marked `(local)` in
+listings.
 
 You run your program through `bin/<name>`, a tiny generated shim that re-invokes
 the shared `zub` binary with your config:

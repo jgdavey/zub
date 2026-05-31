@@ -383,21 +383,18 @@ fn insert(branch: &mut BTreeMap<String, Node>, components: &[String], info: Comm
     // else: `head` is already a leaf — conflict, drop this command.
 }
 
-/// Discover all command executables under each libexec dir into a tree. Files
-/// are indexed recursively; a command's name is its path relative to libexec
-/// with separators as spaces (`db/migrate` -> `"db migrate"`). Local libexec is
-/// scanned first, so it wins slot collisions.
+/// Discover all command executables under each command root into a tree. Files
+/// are indexed recursively; a command's name is its path relative to the root
+/// with separators as spaces (`db/migrate` -> `"db migrate"`). The roots are
+/// ordered lowest-precedence first, so we scan them in reverse — the
+/// highest-precedence (last) root is scanned first and wins slot collisions
+/// (the first occupant of a slot wins). A nonexistent root is silently skipped.
 pub fn discover(id: &Identity) -> Index {
     let mut root: BTreeMap<String, Node> = BTreeMap::new();
 
-    let mut dirs: Vec<(PathBuf, bool)> = Vec::new();
-    if let Some(local) = &id.local_root {
-        dirs.push((local.join("libexec"), true));
-    }
-    dirs.push((id.libexec.clone(), false));
-
-    for (dir, is_local) in dirs {
-        scan_dir(&id.name, &dir, &dir, is_local, &mut root);
+    for command_root in id.command_roots.iter().rev() {
+        let dir = &command_root.path;
+        scan_dir(&id.name, dir, dir, command_root.is_local, &mut root);
     }
 
     Index(root)
@@ -475,6 +472,7 @@ pub fn exec_external(name: &str, path: &Path, args: &[String]) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identity::CommandRoot;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
@@ -487,12 +485,24 @@ mod tests {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    /// An `Identity` whose command roots mirror the historical default: the
+    /// root `libexec` (the base layer) plus, when `local` is given, a local
+    /// `<local>/libexec` overlay (highest precedence, listed last).
     fn id_for(root: &std::path::Path, local: Option<PathBuf>) -> Identity {
+        let mut command_roots = vec![CommandRoot {
+            path: root.join("libexec"),
+            is_local: false,
+        }];
+        if let Some(local) = local {
+            command_roots.push(CommandRoot {
+                path: local.join("libexec"),
+                is_local: true,
+            });
+        }
         Identity {
             name: "rush".into(),
             root: root.to_path_buf(),
-            libexec: root.join("libexec"),
-            local_root: local,
+            command_roots,
             config_path: PathBuf::new(),
         }
     }
@@ -560,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn discover_uses_custom_libexec_dir() {
+    fn discover_uses_custom_command_root() {
         // Commands live in `cmds`, not `libexec`.
         let root = tempdir().unwrap();
         let cmds = root.path().join("cmds");
@@ -569,7 +579,10 @@ mod tests {
         fs::write(&who, "#!/bin/sh\n").unwrap();
         fs::set_permissions(&who, fs::Permissions::from_mode(0o755)).unwrap();
         let mut id = id_for(root.path(), None);
-        id.libexec = cmds;
+        id.command_roots = vec![CommandRoot {
+            path: cmds,
+            is_local: false,
+        }];
         let index = discover(&id);
         let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["who"]);

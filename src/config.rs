@@ -5,11 +5,13 @@ pub struct Config {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root: Option<String>,
-    /// Directory holding the program's command executables. A relative path is
-    /// resolved against `root`; an absolute path is used as-is. Defaults to
-    /// `libexec` when unset.
+    /// Ordered list of directories to collect commands from, lowest-precedence
+    /// first (a later root overrides an earlier one on a name collision). Each
+    /// entry may use the pseudo-variables `$ZUB_ROOT`, `$ZUB_INSTANCE`, and
+    /// `$PWD`. Defaults to `[$ZUB_ROOT/libexec, $PWD/.$ZUB_INSTANCE/libexec]`
+    /// when unset. See `identity::resolve`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub libexec: Option<String>,
+    pub command_roots: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,12 +68,22 @@ mod tests {
     }
 
     #[test]
-    fn loads_config_with_libexec() {
+    fn loads_config_with_command_roots() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("zub.yml");
-        fs::write(&path, "name: rush\nlibexec: src/cmds\n").unwrap();
+        fs::write(
+            &path,
+            "name: rush\ncommand_roots:\n  - $ZUB_ROOT/libexec\n  - src/cmds\n",
+        )
+        .unwrap();
         let cfg = load(&path).unwrap();
-        assert_eq!(cfg.libexec.as_deref(), Some("src/cmds"));
+        assert_eq!(
+            cfg.command_roots,
+            Some(vec![
+                "$ZUB_ROOT/libexec".to_string(),
+                "src/cmds".to_string()
+            ])
+        );
     }
 
     #[test]
@@ -118,13 +130,14 @@ mod tests {
         let cfg = Config {
             name: "rush".into(),
             root: None,
-            libexec: None,
+            command_roots: None,
             version: None,
             description: None,
         };
         let yaml = yaml_serde::to_string(&cfg).unwrap();
         assert!(yaml.contains("name: rush"));
         assert!(!yaml.contains("root"));
+        assert!(!yaml.contains("command_roots"));
         assert!(!yaml.contains("version"));
     }
 }

@@ -3,70 +3,108 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
-/// The local-sub root for a working directory: `<cwd>/.<name>` when
-/// `<cwd>/.<name>/libexec` exists.
-pub fn local_root_in(cwd: &Path, name: &str) -> Option<PathBuf> {
-    let dot_sub = cwd.join(format!(".{}", name));
-    if dot_sub.join("libexec").is_dir() {
-        Some(dot_sub)
-    } else {
-        None
-    }
-}
+/// The default command roots when `command_roots` is unset, reproducing the
+/// historical local/root behavior: the program's `<root>/libexec` (the base
+/// layer) overlaid by a per-directory `$PWD/.<name>/libexec`.
+const DEFAULT_COMMAND_ROOTS: [&str; 2] = ["$ZUB_ROOT/libexec", "$PWD/.$ZUB_INSTANCE/libexec"];
 
-/// Convenience wrapper using the current working directory.
-pub fn local_root(name: &str) -> Option<PathBuf> {
-    let cwd = env::current_dir().ok()?;
-    local_root_in(&cwd, name)
+/// One discovered command-source directory and whether it is working-directory
+/// local (its template referenced `$PWD`; such commands are flagged `(local)`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommandRoot {
+    pub path: PathBuf,
+    pub is_local: bool,
 }
 
 /// Build an `Identity` from a config file path and its loaded config.
 /// `root` comes from the config's `root` field when set & non-empty, otherwise
-/// from the config file's parent directory. `libexec` comes from the config's
-/// `libexec` field (a relative path resolved against `root`, an absolute path
-/// used as-is), defaulting to `<root>/libexec`. The config path is canonicalized.
+/// from the config file's parent directory. `command_roots` comes from the
+/// config's `command_roots` field (defaulting to [`DEFAULT_COMMAND_ROOTS`]),
+/// with each entry's `$ZUB_ROOT`/`$ZUB_INSTANCE`/`$PWD` pseudo-variables
+/// expanded. The config path is canonicalized.
 pub fn resolve(config_path: &Path, config: &Config) -> Option<Identity> {
     let canon = config_path.canonicalize().ok()?;
     let root = match config.root.as_deref() {
         Some(r) if !r.is_empty() => PathBuf::from(r),
         _ => canon.parent()?.to_path_buf(),
     };
-    let libexec = libexec_dir(&root, config.libexec.as_deref());
+    let cwd = env::current_dir().unwrap_or_default();
+    let command_roots = command_roots(config.command_roots.as_deref(), &root, &config.name, &cwd);
     Some(Identity {
         name: config.name.clone(),
         root,
-        libexec,
-        local_root: local_root(&config.name),
+        command_roots,
         config_path: canon,
     })
 }
 
-/// Resolve the program's libexec directory from the configured value: a
-/// relative path is joined onto `root`, an absolute path is used as-is, and an
-/// unset/empty value defaults to `<root>/libexec`.
-fn libexec_dir(root: &Path, configured: Option<&str>) -> PathBuf {
-    match configured {
-        Some(p) if !p.is_empty() => {
-            let p = PathBuf::from(p);
-            if p.is_absolute() {
-                p
+/// Resolve the configured command-root templates (or the defaults) into
+/// absolute `CommandRoot`s, expanding pseudo-variables. A template is flagged
+/// `is_local` when it references `$PWD`.
+fn command_roots(
+    configured: Option<&[String]>,
+    root: &Path,
+    name: &str,
+    cwd: &Path,
+) -> Vec<CommandRoot> {
+    let defaults: Vec<String> = DEFAULT_COMMAND_ROOTS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let templates = match configured {
+        Some(list) if !list.is_empty() => list,
+        _ => &defaults,
+    };
+    templates
+        .iter()
+        .map(|template| {
+            let expanded = expand_pseudo_vars(template, root, name, cwd);
+            // A still-relative entry (e.g. a bare `cmds`) resolves against root.
+            let path = if expanded.is_relative() {
+                root.join(expanded)
             } else {
-                root.join(p)
+                expanded
+            };
+            CommandRoot {
+                path,
+                is_local: template.contains("$PWD"),
             }
-        }
-        _ => root.join("libexec"),
-    }
+        })
+        .collect()
+}
+
+/// Expand the supported pseudo-variables in a command-root template:
+/// `$ZUB_ROOT` -> `root`, `$ZUB_INSTANCE` -> the program name, `$PWD` -> the
+/// current working directory.
+fn expand_pseudo_vars(template: &str, root: &Path, name: &str, cwd: &Path) -> PathBuf {
+    let expanded = template
+        .replace("$ZUB_ROOT", &root.to_string_lossy())
+        .replace("$ZUB_INSTANCE", name)
+        .replace("$PWD", &cwd.to_string_lossy());
+    PathBuf::from(expanded)
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
     pub name: String,
     pub root: PathBuf,
-    /// The directory holding the program's command executables. See
-    /// [`libexec_dir`]; defaults to `<root>/libexec`.
-    pub libexec: PathBuf,
-    pub local_root: Option<PathBuf>,
+    /// Directories to collect commands from, lowest-precedence first (a later
+    /// root overrides an earlier one on a name collision).
+    pub command_roots: Vec<CommandRoot>,
     pub config_path: PathBuf,
+}
+
+impl Identity {
+    /// The directory where `new` creates a (non-local) command: the first
+    /// non-local command root, else the first root, else `<root>/libexec`.
+    pub fn new_command_dir(&self) -> PathBuf {
+        self.command_roots
+            .iter()
+            .find(|r| !r.is_local)
+            .or_else(|| self.command_roots.first())
+            .map(|r| r.path.clone())
+            .unwrap_or_else(|| self.root.join("libexec"))
+    }
 }
 
 #[cfg(test)]
@@ -74,22 +112,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
-
-    #[test]
-    fn local_root_detected_when_dot_sub_libexec_exists() {
-        let dir = tempdir().unwrap();
-        fs::create_dir_all(dir.path().join(".sub").join("libexec")).unwrap();
-        assert_eq!(
-            local_root_in(dir.path(), "sub"),
-            Some(dir.path().join(".sub"))
-        );
-    }
-
-    #[test]
-    fn local_root_absent_otherwise() {
-        let dir = tempdir().unwrap();
-        assert_eq!(local_root_in(dir.path(), "x"), None);
-    }
 
     #[test]
     fn resolve_uses_root_field_when_set() {
@@ -114,47 +136,115 @@ mod tests {
     }
 
     #[test]
-    fn libexec_defaults_to_root_libexec() {
+    fn expand_pseudo_vars_substitutes_all_three() {
         assert_eq!(
-            libexec_dir(Path::new("/opt/rush"), None),
+            expand_pseudo_vars(
+                "$ZUB_ROOT/libexec",
+                Path::new("/opt/rush"),
+                "rush",
+                Path::new("/work")
+            ),
             PathBuf::from("/opt/rush/libexec")
         );
-    }
-
-    #[test]
-    fn libexec_relative_is_joined_to_root() {
         assert_eq!(
-            libexec_dir(Path::new("/opt/rush"), Some("src/cmds")),
-            PathBuf::from("/opt/rush/src/cmds")
+            expand_pseudo_vars(
+                "$PWD/.$ZUB_INSTANCE/libexec",
+                Path::new("/opt/rush"),
+                "rush",
+                Path::new("/work")
+            ),
+            PathBuf::from("/work/.rush/libexec")
         );
     }
 
     #[test]
-    fn libexec_absolute_is_used_as_is() {
+    fn command_roots_default_reproduces_root_then_local() {
+        let roots = command_roots(None, Path::new("/opt/rush"), "rush", Path::new("/work"));
         assert_eq!(
-            libexec_dir(Path::new("/opt/rush"), Some("/usr/lib/rush/cmds")),
-            PathBuf::from("/usr/lib/rush/cmds")
+            roots,
+            vec![
+                CommandRoot {
+                    path: PathBuf::from("/opt/rush/libexec"),
+                    is_local: false,
+                },
+                CommandRoot {
+                    path: PathBuf::from("/work/.rush/libexec"),
+                    is_local: true,
+                },
+            ]
         );
     }
 
     #[test]
-    fn libexec_empty_value_defaults() {
-        assert_eq!(
-            libexec_dir(Path::new("/opt/rush"), Some("")),
-            PathBuf::from("/opt/rush/libexec")
+    fn command_roots_uses_configured_list() {
+        let configured = vec!["$ZUB_ROOT/libexec".to_string(), "/abs/cmds".to_string()];
+        let roots = command_roots(
+            Some(&configured),
+            Path::new("/opt/rush"),
+            "rush",
+            Path::new("/work"),
         );
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].path, PathBuf::from("/opt/rush/libexec"));
+        assert!(!roots[0].is_local);
+        assert_eq!(roots[1].path, PathBuf::from("/abs/cmds"));
+        assert!(!roots[1].is_local);
     }
 
     #[test]
-    fn resolve_reads_libexec_from_config() {
+    fn command_roots_relative_entry_resolves_against_root() {
+        let configured = vec!["cmds".to_string()];
+        let roots = command_roots(
+            Some(&configured),
+            Path::new("/opt/rush"),
+            "rush",
+            Path::new("/work"),
+        );
+        assert_eq!(roots[0].path, PathBuf::from("/opt/rush/cmds"));
+    }
+
+    #[test]
+    fn command_roots_empty_list_falls_back_to_default() {
+        let roots = command_roots(
+            Some(&[]),
+            Path::new("/opt/rush"),
+            "rush",
+            Path::new("/work"),
+        );
+        assert_eq!(roots.len(), 2);
+    }
+
+    #[test]
+    fn new_command_dir_picks_first_non_local() {
+        let id = Identity {
+            name: "rush".into(),
+            root: PathBuf::from("/opt/rush"),
+            command_roots: vec![
+                CommandRoot {
+                    path: PathBuf::from("/work/.rush/libexec"),
+                    is_local: true,
+                },
+                CommandRoot {
+                    path: PathBuf::from("/opt/rush/cmds"),
+                    is_local: false,
+                },
+            ],
+            config_path: PathBuf::new(),
+        };
+        assert_eq!(id.new_command_dir(), PathBuf::from("/opt/rush/cmds"));
+    }
+
+    #[test]
+    fn resolve_reads_command_roots_from_config() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("zub.yml");
-        fs::write(&path, "name: rush\nlibexec: src/cmds\n").unwrap();
+        fs::write(&path, "name: rush\ncommand_roots:\n  - $ZUB_ROOT/cmds\n").unwrap();
         let cfg = crate::config::load(&path).unwrap();
         let id = resolve(&path, &cfg).unwrap();
+        assert_eq!(id.command_roots.len(), 1);
         assert_eq!(
-            id.libexec,
-            dir.path().canonicalize().unwrap().join("src/cmds")
+            id.command_roots[0].path,
+            dir.path().canonicalize().unwrap().join("cmds")
         );
     }
 }

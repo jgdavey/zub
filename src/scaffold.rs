@@ -44,7 +44,7 @@ pub fn create_program(
     let config = Config {
         name: name.to_string(),
         root: None,
-        libexec: None,
+        command_roots: None,
         version: None,
         description: Some("your description".to_string()),
     };

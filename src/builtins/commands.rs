@@ -46,7 +46,7 @@ pub fn complete(args: &[String], _ctx: &Context) -> i32 {
 mod tests {
     use super::*;
     use crate::frontmatter::FrontMatter;
-    use crate::identity::Identity;
+    use crate::identity::{CommandRoot, Identity};
     use crate::index::{self, Index};
     use std::path::PathBuf;
 
@@ -59,8 +59,10 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
-            libexec: PathBuf::from("/r/libexec"),
-            local_root: None,
+            command_roots: vec![CommandRoot {
+                path: PathBuf::from("/r/libexec"),
+                is_local: false,
+            }],
             config_path: PathBuf::new(),
         };
         let cmds = cmds
