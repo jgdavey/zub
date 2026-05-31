@@ -461,12 +461,23 @@ fn scan_dir(
     }
 }
 
-/// Replace the current process with the external command. Only returns on error.
+/// Exec `cmd`, replacing the current process. Only returns on failure, after
+/// reporting it to stderr as `{program}: failed to exec {what}: {err}`. Returns
+/// [`crate::exit_codes::EXEC_FAILED`] so callers that don't diverge can
+/// propagate it.
+pub fn exec_or_report(mut cmd: ProcessCommand, program: &str, what: &str) -> i32 {
+    let err = cmd.exec();
+    // Only gets here if exec failed.
+    eprintln!("{program}: failed to exec {what}: {err}");
+    crate::exit_codes::EXEC_FAILED
+}
+
+/// Replace the current process with the external command at `path`. Only returns
+/// (diverging via `exit`) on error.
 pub fn exec_external(name: &str, path: &Path, args: &[String]) -> ! {
-    let err = ProcessCommand::new(path).args(args).exec();
-    // Only gets here if exec failed
-    eprintln!("{name}: failed to exec {}: {err}", path.display());
-    std::process::exit(crate::exit_codes::EXEC_FAILED);
+    let mut cmd = ProcessCommand::new(path);
+    cmd.args(args);
+    std::process::exit(exec_or_report(cmd, name, &path.display().to_string()));
 }
 
 #[cfg(test)]

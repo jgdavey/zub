@@ -1,8 +1,7 @@
 use crate::builtins;
 use crate::builtins::Context;
-use crate::index::Resolution;
+use crate::index::{exec_or_report, Resolution};
 use std::env;
-use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -94,9 +93,9 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             env::set_var("COMP_PENULT", &penult);
             let mut exec_args = vec!["--complete".to_string()];
             exec_args.extend(args);
-            let err = Command::new(&path).args(&exec_args).exec();
-            eprintln!("{}: failed to exec completion: {err}", ctx.identity.name);
-            crate::exit_codes::EXEC_FAILED
+            let mut cmd = Command::new(&path);
+            cmd.args(&exec_args);
+            exec_or_report(cmd, &ctx.identity.name, "completion")
         }
         CompAction::Children(resolutions) => {
             for resolution in resolutions {

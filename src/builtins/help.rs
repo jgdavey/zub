@@ -1,5 +1,5 @@
 use crate::builtins::Context;
-use crate::index::{Command, Namespace, Resolution};
+use crate::index::{exec_or_report, Command, Namespace, Resolution};
 use std::env;
 use std::io::Write;
 use std::process::Command as ProcessCommand;
@@ -164,10 +164,10 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
                     true
                 }
                 None if dynamic.is_some() => false,
-                None => return 1,
+                None => return crate::exit_codes::FAILURE,
             };
             match dynamic {
-                Some(command) => run_dynamic_help(command, printed),
+                Some(command) => run_dynamic_help(command, &ctx.identity.name, printed),
                 None => 0,
             }
         }
@@ -176,21 +176,19 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
 
 /// Run a `dynamic_help` command with `--help` so it can emit the rest of its
 /// help below the static front-matter text. `printed` says whether any static
-/// detail was already written, so a blank separator can be inserted. Returns
-/// the child's exit code.
-fn run_dynamic_help(command: &Command, printed: bool) -> i32 {
+/// detail was already written, so a blank separator can be inserted. The static
+/// text is flushed first, then the current process is replaced with the command
+/// (its `--help` output and exit code become the process's) — `help` is always
+/// the final action, so exec rather than spawn-and-wait is fine.
+fn run_dynamic_help(command: &Command, program: &str, printed: bool) -> i32 {
     if printed {
         println!();
     }
     // Flush so the static text precedes the child's output on the shared stdout.
     let _ = std::io::stdout().flush();
-    match ProcessCommand::new(&command.path).arg("--help").status() {
-        Ok(status) => status.code().unwrap_or(1),
-        Err(err) => {
-            eprintln!("failed to run {} --help: {err}", command.path.display());
-            1
-        }
-    }
+    let mut cmd = ProcessCommand::new(&command.path);
+    cmd.arg("--help");
+    exec_or_report(cmd, program, &format!("{} --help", command.path.display()))
 }
 
 #[cfg(test)]

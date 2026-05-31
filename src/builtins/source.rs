@@ -1,6 +1,5 @@
 use crate::builtins::Context;
-use crate::index::Resolution;
-use std::os::unix::process::CommandExt;
+use crate::index::{exec_or_report, Resolution};
 use std::process::Command;
 
 fn which(cmd: &str) -> Option<String> {
@@ -43,7 +42,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     let pager = std::env::var("PAGER").ok().filter(|p| !p.is_empty());
     let chosen = bat.or(pager).unwrap_or_else(|| "cat".to_string());
 
-    let err = Command::new(&chosen).arg(&info.path).exec();
-    eprintln!("{prog}: failed to exec {chosen}: {err}");
-    crate::exit_codes::EXEC_FAILED
+    let mut cmd = Command::new(&chosen);
+    cmd.arg(&info.path);
+    exec_or_report(cmd, prog, &chosen)
 }
