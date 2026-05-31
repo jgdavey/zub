@@ -83,10 +83,6 @@ pub fn get(name: &str) -> Option<&'static Builtin> {
     BUILTINS.iter().find(|d| d.name == name)
 }
 
-pub fn is_builtin(name: &str) -> bool {
-    get(name).is_some()
-}
-
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
     match get(name) {
         Some(doc) => (doc.run)(args, ctx),
