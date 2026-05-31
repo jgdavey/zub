@@ -304,7 +304,7 @@ loading automatically in your shell.
 - [ ] Cache indexed commands (if perf becomes an issue)
 - [ ] Document how to do completion
 - [ ] static completion in front-matter?
-- [ ] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
+- [x] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
 - [ ] scaffold: allow custom root path
 
 ## License
