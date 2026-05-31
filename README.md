@@ -321,11 +321,11 @@ loading automatically in your shell.
 - [x] Handle namespaced commands
 - [x] scaffold: overwrite existing
 - [x] Set up CI building
-- [ ] Cache indexed commands (if perf becomes an issue)
-- [ ] Document how to do completion
-- [ ] static completion in front-matter?
 - [x] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
-- [ ] scaffold: allow custom root path
+- [x] scaffold: allow custom root path
+- [ ] Improve documentation on custom completions
+- [ ] (possibly) Cache indexed commands (if perf becomes an issue)
+- [ ] (possibly) static completion in front-matter?
 
 ## License
 
