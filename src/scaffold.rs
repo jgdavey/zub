@@ -47,7 +47,7 @@ pub fn create_program(
         version: None,
         description: Some("your description".to_string()),
     };
-    let yaml = serde_yaml::to_string(&config).map_err(|e| io::Error::other(e.to_string()))?;
+    let yaml = yaml_serde::to_string(&config).map_err(|e| io::Error::other(e.to_string()))?;
     write_generated(
         &target.join("zub.yml"),
         yaml.as_bytes(),

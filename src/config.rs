@@ -18,7 +18,7 @@ use std::path::Path;
 /// missing or cannot be parsed.
 pub fn load(path: &Path) -> Option<Config> {
     if let Ok(contents) = fs::read_to_string(path) {
-        if let Ok(cfg) = serde_yaml::from_str::<Config>(&contents) {
+        if let Ok(cfg) = yaml_serde::from_str::<Config>(&contents) {
             return Some(cfg);
         }
     }
@@ -74,7 +74,7 @@ mod tests {
             version: None,
             description: None,
         };
-        let yaml = serde_yaml::to_string(&cfg).unwrap();
+        let yaml = yaml_serde::to_string(&cfg).unwrap();
         assert!(yaml.contains("name: rush"));
         assert!(!yaml.contains("root"));
         assert!(!yaml.contains("version"));

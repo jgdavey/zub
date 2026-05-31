@@ -87,7 +87,7 @@ fn parse_block(block: &str) -> FrontMatter {
     if block.trim().is_empty() {
         return FrontMatter::default();
     }
-    serde_yaml::from_str(block).unwrap_or_default()
+    yaml_serde::from_str(block).unwrap_or_default()
 }
 
 /// Merge the captured shebang interpreter into a parsed block.
