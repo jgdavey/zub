@@ -33,7 +33,9 @@ Use bare `cargo`/`rustc` (not `rustup run …`).
 
 ### Front-matter (`frontmatter.rs`)
 
-Subcommands self-document via a contiguous run of comment lines beginning with a comment leader + `@` (`#@`, `//@`, `--@`, `;@`). The text after the sigil is plain YAML. The parser skips a shebang, collects marker lines until the first non-marker line, and stops — it never reads the whole script, keeping discovery fast regardless of file size. Recognized keys: `summary`, `usage`, `help`, `complete`, `eval`, `override`. Unknown keys are ignored (forward-compatible). `serde` maps the YAML `override` key to the `overrides` field.
+Subcommands self-document via a contiguous run of comment lines beginning with a comment leader + `@` (`#@`, `//@`, `--@`, `;@`). The text after the sigil is plain YAML. The parser captures the shebang's interpreter (the text after `#!`) into the non-YAML `interpreter` field (`#[serde(skip)]`, reserved for future use), then collects marker lines until the first non-marker line, and stops — it never reads the whole script, keeping discovery fast regardless of file size. Recognized keys: `summary`, `usage`, `help`, `complete`, `eval`, `dynamic_help`, `override`. Unknown keys are ignored (forward-compatible). `serde` maps the YAML `override` key to the `overrides` field.
+
+`dynamic_help: true` makes `help <cmd>` print the static `help` text (if any) and then run the command with `--help` appended, letting the script emit the rest of its help (the `help` built-in handles this — a dynamic-help command is shown even with no static front-matter). The default (`false`) shows only the static text.
 
 ### Built-ins (`builtins/`)
 

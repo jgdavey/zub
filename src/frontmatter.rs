@@ -5,10 +5,21 @@ pub struct FrontMatter {
     pub summary: Option<String>,
     pub usage: Option<String>,
     pub help: Option<String>,
+    /// The interpreter from the script's shebang line (the text after `#!`,
+    /// e.g. `/usr/bin/env bash`), captured at parse time. This is *not* a
+    /// front-matter key — it is derived from the shebang and reserved for
+    /// future use, so `serde` skips it.
+    #[serde(skip)]
+    pub interpreter: Option<String>,
     #[serde(default)]
     pub complete: bool,
     #[serde(default)]
     pub eval: bool,
+    /// When true, `help <cmd>` prints the static `help` text (if any) and then
+    /// runs the command with `--help` appended, letting the script emit the
+    /// rest of its help. When false (the default), only the static text shows.
+    #[serde(default)]
+    pub dynamic_help: bool,
     #[serde(rename = "override", default)]
     pub overrides: bool,
 }
@@ -37,12 +48,19 @@ fn strip_marker(line: &str, known: &Option<String>) -> Option<(String, String)> 
     None
 }
 
-/// Collect the YAML payload from a line iterator: skip a leading shebang, then
-/// gather contiguous marker lines, stopping at the first line that is not one.
-fn extract_block<I: Iterator<Item = String>>(mut lines: I) -> String {
+/// Collect the YAML payload from a line iterator: capture and skip a leading
+/// shebang, then gather contiguous marker lines, stopping at the first line that
+/// is not one. Returns `(interpreter, yaml_block)`, where `interpreter` is the
+/// text after `#!` (trimmed) when the first line is a shebang.
+fn extract_block<I: Iterator<Item = String>>(mut lines: I) -> (Option<String>, String) {
     let mut current = lines.next();
+    let mut interpreter = None;
     if let Some(first) = &current {
-        if first.starts_with("#!") {
+        if let Some(rest) = first.strip_prefix("#!") {
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                interpreter = Some(rest.to_string());
+            }
             current = lines.next();
         }
     }
@@ -62,7 +80,7 @@ fn extract_block<I: Iterator<Item = String>>(mut lines: I) -> String {
             None => break,
         }
     }
-    block
+    (interpreter, block)
 }
 
 fn parse_block(block: &str) -> FrontMatter {
@@ -72,10 +90,16 @@ fn parse_block(block: &str) -> FrontMatter {
     serde_yaml::from_str(block).unwrap_or_default()
 }
 
+/// Merge the captured shebang interpreter into a parsed block.
+fn parse_with_interpreter((interpreter, block): (Option<String>, String)) -> FrontMatter {
+    let mut front = parse_block(&block);
+    front.interpreter = interpreter;
+    front
+}
+
 /// Parse front-matter from an in-memory string.
 pub fn parse_str(source: &str) -> FrontMatter {
-    let block = extract_block(source.lines().map(|l| l.to_string()));
-    parse_block(&block)
+    parse_with_interpreter(extract_block(source.lines().map(|l| l.to_string())))
 }
 
 /// Parse front-matter from a file, reading only the header region (the lazy
@@ -83,8 +107,9 @@ pub fn parse_str(source: &str) -> FrontMatter {
 pub fn parse_file(path: &Path) -> std::io::Result<FrontMatter> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    let block = extract_block(reader.lines().map_while(Result::ok));
-    Ok(parse_block(&block))
+    Ok(parse_with_interpreter(extract_block(
+        reader.lines().map_while(Result::ok),
+    )))
 }
 
 #[cfg(test)]
@@ -146,7 +171,14 @@ echo not part of header
     #[test]
     fn empty_or_blockless_returns_default() {
         assert_eq!(parse_str(""), FrontMatter::default());
-        assert_eq!(parse_str("#!/bin/sh\necho hi\n"), FrontMatter::default());
+        // A shebang is captured as the interpreter; the rest stays default.
+        assert_eq!(
+            parse_str("#!/bin/sh\necho hi\n"),
+            FrontMatter {
+                interpreter: Some("/bin/sh".into()),
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -165,5 +197,30 @@ echo not part of header
     fn eval_key_parses_and_defaults_false() {
         assert!(parse_str("#@ eval: true\n").eval);
         assert!(!parse_str("#@ summary: x\n").eval);
+    }
+
+    #[test]
+    fn dynamic_help_key_parses_and_defaults_false() {
+        assert!(parse_str("#@ dynamic_help: true\n").dynamic_help);
+        assert!(!parse_str("#@ summary: x\n").dynamic_help);
+    }
+
+    #[test]
+    fn captures_shebang_interpreter() {
+        let fm = parse_str("#!/usr/bin/env bash\n#@ summary: x\n");
+        assert_eq!(fm.interpreter.as_deref(), Some("/usr/bin/env bash"));
+    }
+
+    #[test]
+    fn no_shebang_means_no_interpreter() {
+        let fm = parse_str("#@ summary: x\n");
+        assert_eq!(fm.interpreter, None);
+    }
+
+    #[test]
+    fn interpreter_not_set_from_yaml_key() {
+        // `interpreter` is derived from the shebang, never the YAML body.
+        let fm = parse_str("#!/bin/sh\n#@ interpreter: /usr/bin/python3\n");
+        assert_eq!(fm.interpreter.as_deref(), Some("/bin/sh"));
     }
 }

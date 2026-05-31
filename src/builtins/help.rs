@@ -1,6 +1,8 @@
 use crate::builtins::Context;
-use crate::index::{Namespace, Resolution};
+use crate::index::{Command, Namespace, Resolution};
 use std::env;
+use std::io::Write;
+use std::process::Command as ProcessCommand;
 
 struct Doc {
     summary: Option<String>,
@@ -167,13 +169,43 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
                 usage: res.usage(&ctx.identity),
                 help: res.help(&ctx.identity),
             };
-            match render_detail(doc) {
+            // A `dynamic_help` command appends its own `--help` output, so it is
+            // shown even when it has no static front-matter to render.
+            let dynamic = match &res {
+                Resolution::Command { command } if command.front.dynamic_help => Some(*command),
+                _ => None,
+            };
+            let printed = match render_detail(doc) {
                 Some(detail) => {
                     print!("{detail}");
-                    0
+                    true
                 }
-                None => 1,
+                None if dynamic.is_some() => false,
+                None => return 1,
+            };
+            match dynamic {
+                Some(command) => run_dynamic_help(command, printed),
+                None => 0,
             }
+        }
+    }
+}
+
+/// Run a `dynamic_help` command with `--help` so it can emit the rest of its
+/// help below the static front-matter text. `printed` says whether any static
+/// detail was already written, so a blank separator can be inserted. Returns
+/// the child's exit code.
+fn run_dynamic_help(command: &Command, printed: bool) -> i32 {
+    if printed {
+        println!();
+    }
+    // Flush so the static text precedes the child's output on the shared stdout.
+    let _ = std::io::stdout().flush();
+    match ProcessCommand::new(&command.path).arg("--help").status() {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(err) => {
+            eprintln!("failed to run {} --help: {err}", command.path.display());
+            1
         }
     }
 }

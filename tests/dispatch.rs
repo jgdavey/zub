@@ -114,6 +114,67 @@ fn dispatches_nested_command_and_passes_remaining_args() {
 }
 
 #[test]
+fn dynamic_help_appends_script_help_output() {
+    let tree = program_tree("rush");
+    // The command prints its own help when invoked with --help, and declares
+    // dynamic_help so `help greet` runs it after the static front-matter text.
+    write_cmd(
+        tree.path(),
+        "greet",
+        "#!/bin/sh\n\
+         #@ summary: greet someone\n\
+         #@ usage: rush greet <name>\n\
+         #@ help: Static help line.\n\
+         #@ dynamic_help: true\n\
+         if [ \"$1\" = --help ]; then echo \"Dynamic help line.\"; exit 0; fi\n\
+         echo \"hi $1\"\n",
+    );
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["help", "greet"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Static help line."), "got: {stdout}");
+    assert!(stdout.contains("Dynamic help line."), "got: {stdout}");
+    // Static text precedes the script's own output.
+    assert!(
+        stdout.find("Static help line.").unwrap() < stdout.find("Dynamic help line.").unwrap(),
+        "static help should come first: {stdout}"
+    );
+}
+
+#[test]
+fn static_help_does_not_run_script() {
+    let tree = program_tree("rush");
+    // No dynamic_help: the script must not be invoked, only the static text shows.
+    write_cmd(
+        tree.path(),
+        "greet",
+        "#!/bin/sh\n\
+         #@ summary: greet someone\n\
+         #@ usage: rush greet <name>\n\
+         #@ help: Static help line.\n\
+         if [ \"$1\" = --help ]; then echo \"Dynamic help line.\"; exit 0; fi\n\
+         echo \"hi $1\"\n",
+    );
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["help", "greet"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Static help line."), "got: {stdout}");
+    assert!(!stdout.contains("Dynamic help line."), "got: {stdout}");
+}
+
+#[test]
 fn unknown_command_errors() {
     let tree = program_tree("rush");
     let bin = env!("CARGO_BIN_EXE_zub");
