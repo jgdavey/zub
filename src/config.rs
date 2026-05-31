@@ -5,6 +5,11 @@ pub struct Config {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root: Option<String>,
+    /// Directory holding the program's command executables. A relative path is
+    /// resolved against `root`; an absolute path is used as-is. Defaults to
+    /// `libexec` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub libexec: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -61,6 +66,15 @@ mod tests {
     }
 
     #[test]
+    fn loads_config_with_libexec() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: rush\nlibexec: src/cmds\n").unwrap();
+        let cfg = load(&path).unwrap();
+        assert_eq!(cfg.libexec.as_deref(), Some("src/cmds"));
+    }
+
+    #[test]
     fn loads_config_without_root() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("zub.yml");
@@ -104,6 +118,7 @@ mod tests {
         let cfg = Config {
             name: "rush".into(),
             root: None,
+            libexec: None,
             version: None,
             description: None,
         };

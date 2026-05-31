@@ -187,3 +187,27 @@ fn unknown_command_errors() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("no such command `nope'"));
 }
+
+#[test]
+fn dispatches_command_from_configured_libexec_dir() {
+    // Commands live in `cmds`, not the default `libexec`.
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("zub.yml"), "name: rush\nlibexec: cmds\n").unwrap();
+    let cmd = dir.path().join("cmds").join("hi");
+    fs::create_dir_all(cmd.parent().unwrap()).unwrap();
+    fs::write(&cmd, "#!/bin/sh\necho hello-from-cmds\n").unwrap();
+    fs::set_permissions(&cmd, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(dir.path()))
+        .arg("hi")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "hello-from-cmds"
+    );
+}

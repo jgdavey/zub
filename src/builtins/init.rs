@@ -107,6 +107,7 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/opt/rush"),
+            libexec: PathBuf::from("/opt/rush/libexec"),
             local_root: None,
             config_path: PathBuf::from("/opt/rush/zub.yml"),
         };

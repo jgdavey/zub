@@ -22,25 +22,49 @@ pub fn local_root(name: &str) -> Option<PathBuf> {
 
 /// Build an `Identity` from a config file path and its loaded config.
 /// `root` comes from the config's `root` field when set & non-empty, otherwise
-/// from the config file's parent directory. The config path is canonicalized.
+/// from the config file's parent directory. `libexec` comes from the config's
+/// `libexec` field (a relative path resolved against `root`, an absolute path
+/// used as-is), defaulting to `<root>/libexec`. The config path is canonicalized.
 pub fn resolve(config_path: &Path, config: &Config) -> Option<Identity> {
     let canon = config_path.canonicalize().ok()?;
     let root = match config.root.as_deref() {
         Some(r) if !r.is_empty() => PathBuf::from(r),
         _ => canon.parent()?.to_path_buf(),
     };
+    let libexec = libexec_dir(&root, config.libexec.as_deref());
     Some(Identity {
         name: config.name.clone(),
         root,
+        libexec,
         local_root: local_root(&config.name),
         config_path: canon,
     })
+}
+
+/// Resolve the program's libexec directory from the configured value: a
+/// relative path is joined onto `root`, an absolute path is used as-is, and an
+/// unset/empty value defaults to `<root>/libexec`.
+fn libexec_dir(root: &Path, configured: Option<&str>) -> PathBuf {
+    match configured {
+        Some(p) if !p.is_empty() => {
+            let p = PathBuf::from(p);
+            if p.is_absolute() {
+                p
+            } else {
+                root.join(p)
+            }
+        }
+        _ => root.join("libexec"),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
     pub name: String,
     pub root: PathBuf,
+    /// The directory holding the program's command executables. See
+    /// [`libexec_dir`]; defaults to `<root>/libexec`.
+    pub libexec: PathBuf,
     pub local_root: Option<PathBuf>,
     pub config_path: PathBuf,
 }
@@ -87,5 +111,50 @@ mod tests {
         let cfg = crate::config::load(&path).unwrap();
         let id = resolve(&path, &cfg).unwrap();
         assert_eq!(id.root, dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn libexec_defaults_to_root_libexec() {
+        assert_eq!(
+            libexec_dir(Path::new("/opt/rush"), None),
+            PathBuf::from("/opt/rush/libexec")
+        );
+    }
+
+    #[test]
+    fn libexec_relative_is_joined_to_root() {
+        assert_eq!(
+            libexec_dir(Path::new("/opt/rush"), Some("src/cmds")),
+            PathBuf::from("/opt/rush/src/cmds")
+        );
+    }
+
+    #[test]
+    fn libexec_absolute_is_used_as_is() {
+        assert_eq!(
+            libexec_dir(Path::new("/opt/rush"), Some("/usr/lib/rush/cmds")),
+            PathBuf::from("/usr/lib/rush/cmds")
+        );
+    }
+
+    #[test]
+    fn libexec_empty_value_defaults() {
+        assert_eq!(
+            libexec_dir(Path::new("/opt/rush"), Some("")),
+            PathBuf::from("/opt/rush/libexec")
+        );
+    }
+
+    #[test]
+    fn resolve_reads_libexec_from_config() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zub.yml");
+        fs::write(&path, "name: rush\nlibexec: src/cmds\n").unwrap();
+        let cfg = crate::config::load(&path).unwrap();
+        let id = resolve(&path, &cfg).unwrap();
+        assert_eq!(
+            id.libexec,
+            dir.path().canonicalize().unwrap().join("src/cmds")
+        );
     }
 }

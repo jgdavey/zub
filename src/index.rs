@@ -394,7 +394,7 @@ pub fn discover(id: &Identity) -> Index {
     if let Some(local) = &id.local_root {
         dirs.push((local.join("libexec"), true));
     }
-    dirs.push((id.root.join("libexec"), false));
+    dirs.push((id.libexec.clone(), false));
 
     for (dir, is_local) in dirs {
         scan_dir(&id.name, &dir, &dir, is_local, &mut root);
@@ -405,7 +405,13 @@ pub fn discover(id: &Identity) -> Index {
 
 /// Recursively scan `dir`, inserting commands with names relative to `base`.
 /// `name` is the program name, used only to prefix front-matter warnings.
-fn scan_dir(name: &str, base: &Path, dir: &Path, is_local: bool, root: &mut BTreeMap<String, Node>) {
+fn scan_dir(
+    name: &str,
+    base: &Path,
+    dir: &Path,
+    is_local: bool,
+    root: &mut BTreeMap<String, Node>,
+) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -485,6 +491,7 @@ mod tests {
         Identity {
             name: "rush".into(),
             root: root.to_path_buf(),
+            libexec: root.join("libexec"),
             local_root: local,
             config_path: PathBuf::new(),
         }
@@ -548,6 +555,22 @@ mod tests {
         fs::write(root.path().join("libexec").join("README.md"), "notes\n").unwrap();
         write_exec(root.path(), ".hidden", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), None));
+        let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
+        assert_eq!(names, vec!["who"]);
+    }
+
+    #[test]
+    fn discover_uses_custom_libexec_dir() {
+        // Commands live in `cmds`, not `libexec`.
+        let root = tempdir().unwrap();
+        let cmds = root.path().join("cmds");
+        fs::create_dir_all(&cmds).unwrap();
+        let who = cmds.join("who");
+        fs::write(&who, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&who, fs::Permissions::from_mode(0o755)).unwrap();
+        let mut id = id_for(root.path(), None);
+        id.libexec = cmds;
+        let index = discover(&id);
         let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["who"]);
     }

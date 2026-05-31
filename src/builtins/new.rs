@@ -82,12 +82,14 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     };
 
     let program = &ctx.identity.name;
-    let base_dir: PathBuf = if opts.local {
-        local_base_dir(&std::env::current_dir().unwrap_or_default(), program)
+    // A `--local` command goes in the per-directory override (`.<name>/libexec`,
+    // the fixed convention `identity::local_root_in` discovers); otherwise it
+    // goes in the program's configured libexec dir.
+    let libexec: PathBuf = if opts.local {
+        local_base_dir(&std::env::current_dir().unwrap_or_default(), program).join("libexec")
     } else {
-        ctx.identity.root.clone()
+        ctx.identity.libexec.clone()
     };
-    let libexec = base_dir.join("libexec");
     // A `/` in the command name nests the file; the displayed (space-joined)
     // name is what the user types: `new db/migrate` -> `libexec/db/migrate`,
     // invoked as `<program> db migrate`.
@@ -129,6 +131,7 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: root.to_path_buf(),
+            libexec: root.join("libexec"),
             local_root: None,
             config_path: PathBuf::new(),
         };
@@ -152,6 +155,26 @@ mod tests {
             fs::metadata(&path).unwrap().permissions().mode() & 0o111,
             0o111
         );
+    }
+
+    #[test]
+    fn run_writes_into_configured_libexec_dir() {
+        let root = tempdir().unwrap();
+        let id = Identity {
+            name: "rush".into(),
+            root: root.path().to_path_buf(),
+            libexec: root.path().join("cmds"),
+            local_root: None,
+            config_path: PathBuf::new(),
+        };
+        let index = Index::default();
+        let ctx = Context {
+            identity: &id,
+            index: &index,
+        };
+        run(&["greet".to_string()], &ctx);
+        assert!(root.path().join("cmds").join("greet").exists());
+        assert!(!root.path().join("libexec").join("greet").exists());
     }
 
     #[test]

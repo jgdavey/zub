@@ -113,7 +113,14 @@ name: rush
 # optional:
 version: 0.1.0
 description: A delicious way to organize programs
+libexec: libexec      # where subcommands are collected (default: libexec)
 ```
+
+By default subcommands are collected from a `libexec` directory next to
+`zub.yml`. Set `libexec` to collect them from somewhere else: a relative path is
+resolved against the program root (the same base as the default), and an
+absolute path is used as-is. For example, `libexec: src/commands` or
+`libexec: /usr/lib/rush/commands`.
 
 You run your program through `bin/<name>`, a tiny generated shim that re-invokes
 the shared `zub` binary with your config:

@@ -222,6 +222,7 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
+            libexec: PathBuf::from("/r/libexec"),
             local_root: None,
             config_path: PathBuf::new(),
         };
@@ -241,6 +242,7 @@ mod tests {
         let id = Identity {
             name: "rush".into(),
             root: PathBuf::from("/r"),
+            libexec: PathBuf::from("/r/libexec"),
             local_root: None,
             config_path: PathBuf::new(),
         };
