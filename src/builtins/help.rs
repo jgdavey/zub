@@ -28,7 +28,7 @@ fn rows_for(entries: &[Resolution]) -> Vec<(String, String)> {
         .iter()
         .filter_map(|res| {
             let name = res.name()?;
-            let summary = res.summary().unwrap_or_default();
+            let summary = res.summary().unwrap_or_else(|| "(no summary)".to_string());
             let summary = match res {
                 Resolution::Command { command } if command.is_local => {
                     format!("(local) {summary}").trim_end().to_string()
@@ -277,7 +277,7 @@ mod tests {
             index: &cmds,
         };
         let table = render_table(&ctx, 80);
-        assert!(table.lines().any(|l| l.trim() == "draft"));
+        assert!(table.lines().any(|l| l.contains("draft")));
     }
 
     #[test]
