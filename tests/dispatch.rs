@@ -210,6 +210,44 @@ fn unknown_command_errors() {
 }
 
 #[test]
+fn help_for_undocumented_command_synthesizes_usage() {
+    let tree = program_tree("rush");
+    // A command with no front-matter at all.
+    write_cmd(tree.path(), "bare", "#!/bin/sh\necho hi\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["help", "bare"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Usage: rush bare [<args>]"));
+}
+
+#[test]
+fn help_header_shows_version_and_description() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("zub.yml"),
+        "name: rush\nversion: 9.9.9\ndescription: fleet tool\n",
+    )
+    .unwrap();
+    write_cmd(dir.path(), "hi", "#!/bin/sh\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(dir.path()))
+        .arg("help")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.starts_with("rush 9.9.9 — fleet tool"));
+}
+
+#[test]
 fn unknown_command_suggests_a_close_match() {
     let tree = program_tree("rush");
     write_cmd(tree.path(), "status", "#!/bin/sh\n");

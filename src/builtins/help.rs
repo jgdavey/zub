@@ -20,15 +20,19 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 /// Build `(name, summary)` rows for the given resolutions, marking local leaves.
-/// Undocumented entries (no summary) are skipped.
+/// An undocumented command (no summary) still gets a row — discoverability
+/// matters more than tidiness — with an empty summary; the `(local)` tag stands
+/// in on its own when such a command is also local.
 fn rows_for(entries: &[Resolution]) -> Vec<(String, String)> {
     entries
         .iter()
         .filter_map(|res| {
-            let summary = res.summary()?;
             let name = res.name()?;
+            let summary = res.summary().unwrap_or_default();
             let summary = match res {
-                Resolution::Command { command } if command.is_local => format!("(local) {summary}"),
+                Resolution::Command { command } if command.is_local => {
+                    format!("(local) {summary}").trim_end().to_string()
+                }
                 _ => summary,
             };
             Some((name, summary))
@@ -58,10 +62,9 @@ fn render_rows(
     out.push_str(&format!("Usage: {prog} {header}<command> [<args>]\n\n",));
     out.push_str("Commands:\n");
     for (name, summary) in rows {
-        out.push_str(&format!(
-            "   {name:<longest$}  {}\n",
-            truncate(&summary, summary_width)
-        ));
+        let row = format!("   {name:<longest$}  {}", truncate(&summary, summary_width));
+        out.push_str(row.trim_end());
+        out.push('\n');
     }
     out.push_str(&format!(
         "\nSee '{prog} help {header}<command>' for more information on a specific command.\n"
@@ -69,10 +72,38 @@ fn render_rows(
     out
 }
 
-/// Render the top-level command table shown by bare `help`.
+/// The program identification line shown above the top-level table, drawn from
+/// the config's `version`/`description`: `<name> <version> — <description>`,
+/// with either part omitted when unset. `None` when both are unset (the table
+/// then opens straight at `Usage:`, as before).
+fn program_header(ctx: &Context) -> Option<String> {
+    let id = ctx.identity;
+    match (&id.version, &id.description) {
+        (None, None) => None,
+        (version, description) => {
+            let mut line = id.name.clone();
+            if let Some(version) = version {
+                line.push(' ');
+                line.push_str(version);
+            }
+            if let Some(description) = description {
+                line.push_str(" — ");
+                line.push_str(description);
+            }
+            Some(line)
+        }
+    }
+}
+
+/// Render the top-level command table shown by bare `help`, preceded by the
+/// program's version/description header when the config supplies either.
 pub fn render_table(ctx: &Context, columns: usize) -> String {
     let resolutions = ctx.index.top_level_resolutions();
-    render_rows(ctx, None, rows_for(&resolutions), columns)
+    let table = render_rows(ctx, None, rows_for(&resolutions), columns);
+    match program_header(ctx) {
+        Some(header) => format!("{header}\n\n{table}"),
+        None => table,
+    }
 }
 
 /// Render the child table for a namespace (e.g. `help db`).
@@ -145,16 +176,24 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             0
         }
         res => {
-            let doc = Doc {
-                summary: res.summary(),
-                usage: res.usage(ctx.identity),
-                help: res.help(ctx.identity),
-            };
             // A `dynamic_help` command appends its own `--help` output, so it is
             // shown even when it has no static front-matter to render.
             let dynamic = match &res {
                 Resolution::Command { command } if command.front.dynamic_help => Some(*command),
                 _ => None,
+            };
+            // An undocumented command still gets help: synthesize a usage line
+            // from its name so `help <cmd>` describes it instead of failing
+            // silently. A dynamic-help command with no static text is the one
+            // case left to its own `--help`, so it keeps no synthetic usage.
+            let usage = res.usage(ctx.identity).or_else(|| {
+                (dynamic.is_none())
+                    .then(|| format!("{} {} [<args>]", ctx.identity.name, res.full_name()))
+            });
+            let doc = Doc {
+                summary: res.summary(),
+                usage,
+                help: res.help(ctx.identity),
             };
             let printed = match render_detail(doc) {
                 Some(detail) => {
@@ -226,6 +265,64 @@ mod tests {
             })
             .collect();
         (id, Index::from_leaves(cmds))
+    }
+
+    #[test]
+    fn table_includes_undocumented_command() {
+        // A command with no summary is still listed (just without text), so a
+        // half-finished command stays discoverable.
+        let (id, cmds) = ctx_named(&[("who", Some("docs")), ("draft", None)]);
+        let ctx = Context {
+            identity: &id,
+            index: &cmds,
+        };
+        let table = render_table(&ctx, 80);
+        assert!(table.lines().any(|l| l.trim() == "draft"));
+    }
+
+    #[test]
+    fn header_combines_version_and_description() {
+        let mut id = fixture("rush", "/r");
+        id.version = Some("1.2.3".into());
+        id.description = Some("manage the fleet".into());
+        let index = Index::default();
+        let ctx = Context {
+            identity: &id,
+            index: &index,
+        };
+        assert_eq!(
+            program_header(&ctx).as_deref(),
+            Some("rush 1.2.3 — manage the fleet")
+        );
+        // The header opens the top-level table, above `Usage:`.
+        assert!(render_table(&ctx, 80).starts_with("rush 1.2.3 — manage the fleet\n\n"));
+    }
+
+    #[test]
+    fn header_omits_unset_parts() {
+        let mut id = fixture("rush", "/r");
+        id.description = Some("just a description".into());
+        let index = Index::default();
+        let ctx = Context {
+            identity: &id,
+            index: &index,
+        };
+        assert_eq!(
+            program_header(&ctx).as_deref(),
+            Some("rush — just a description")
+        );
+    }
+
+    #[test]
+    fn header_absent_when_config_supplies_neither() {
+        let (id, cmds) = ctx();
+        let ctx = Context {
+            identity: &id,
+            index: &cmds,
+        };
+        assert_eq!(program_header(&ctx), None);
+        // The table opens straight at `Usage:`, as before.
+        assert!(render_table(&ctx, 80).starts_with("Usage:"));
     }
 
     #[test]

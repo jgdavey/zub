@@ -35,6 +35,8 @@ pub fn resolve(config_path: &Path, config: &Config) -> Option<Identity> {
         root,
         command_roots,
         config_path: canon,
+        version: config.version.clone(),
+        description: config.description.clone(),
     })
 }
 
@@ -92,6 +94,12 @@ pub struct Identity {
     /// root overrides an earlier one on a name collision).
     pub command_roots: Vec<CommandRoot>,
     pub config_path: PathBuf,
+    /// The program's version, from the config's `version` field (for the help
+    /// header). `None` when unset.
+    pub version: Option<String>,
+    /// The program's one-line description, from the config's `description` field
+    /// (for the help header). `None` when unset.
+    pub description: Option<String>,
 }
 
 impl Identity {
@@ -122,6 +130,8 @@ pub(crate) fn fixture(name: &str, root: impl AsRef<Path>) -> Identity {
         config_path: root.join("zub.yml"),
         name: name.to_string(),
         root,
+        version: None,
+        description: None,
     }
 }
 
@@ -248,8 +258,25 @@ mod tests {
                 },
             ],
             config_path: PathBuf::new(),
+            version: None,
+            description: None,
         };
         assert_eq!(id.new_command_dir(), PathBuf::from("/opt/rush/cmds"));
+    }
+
+    #[test]
+    fn resolve_carries_version_and_description() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zub.yml");
+        fs::write(
+            &path,
+            "name: rush\nversion: 1.2.3\ndescription: do things\n",
+        )
+        .unwrap();
+        let cfg = crate::config::load(&path).unwrap();
+        let id = resolve(&path, &cfg).unwrap();
+        assert_eq!(id.version.as_deref(), Some("1.2.3"));
+        assert_eq!(id.description.as_deref(), Some("do things"));
     }
 
     #[test]
