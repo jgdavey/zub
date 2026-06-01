@@ -165,13 +165,15 @@ fn main() {
             let consumed = command.components.len();
             index::exec_external(&identity.name, command.path.as_ref(), &rest[consumed..])
         }
-        Resolution::Namespace { .. } => {
+        Resolution::Namespace { namespace } => {
+            // A bare namespace (`zub db`) shows its child table; extra tokens
+            // (`zub db migrt`) mean a mistyped subcommand, not a namespace.
+            if rest.len() > namespace.components.len() {
+                exit(builtins::report_not_found(&ctx, &rest));
+            }
             exit(builtins::run("help", &rest, &ctx));
         }
-        Resolution::NotFound => {
-            eprintln!("{}: no such command `{}'", identity.name, rest.join(" "));
-            exit(exit_codes::NOT_FOUND);
-        }
+        Resolution::NotFound => exit(builtins::report_not_found(&ctx, &rest)),
     }
 }
 

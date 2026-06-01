@@ -134,13 +134,11 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
     }
 
     match ctx.index.resolve(args) {
-        Resolution::NotFound => {
-            eprintln!(
-                "{}: no such command `{}'",
-                ctx.identity.name,
-                args.join(" ")
-            );
-            crate::exit_codes::NOT_FOUND
+        Resolution::NotFound => super::report_not_found(ctx, args),
+        Resolution::Namespace { namespace } if args.len() > namespace.components.len() => {
+            // `help db migrt` — a mistyped subcommand, not a request for the
+            // `db` table.
+            super::report_not_found(ctx, args)
         }
         Resolution::Namespace { namespace } => {
             print!("{}", render_namespace_table(namespace, ctx, columns));

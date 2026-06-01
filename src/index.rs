@@ -287,6 +287,81 @@ impl Index {
         out.sort_by_key(|a| a.full_name());
         out
     }
+
+    /// A "did you mean?" hint for `args` that failed to resolve, or `None` when
+    /// nothing is close. Walks the tree alongside `args` to the first token that
+    /// matches no child, then suggests the nearest sibling *at that level* — a
+    /// command, a namespace, or (at the root) a built-in — returning the full
+    /// path with the typo replaced (`db migrt` -> `db migrate`). Only the first
+    /// unrecognized token is considered, so a real command's own trailing args
+    /// never throw off the match. An exact command match yields `None`.
+    pub fn suggest<S: AsRef<str>>(&self, args: &[S]) -> Option<String> {
+        let mut branch = &self.0;
+        let mut prefix: Vec<String> = Vec::new();
+        for tok in args {
+            let tok = tok.as_ref();
+            match branch.get(tok) {
+                Some(Node::Leaf(_)) => return None, // an exact command — nothing to suggest
+                Some(Node::Branch(next)) => {
+                    prefix.push(tok.to_string());
+                    branch = &next.children;
+                }
+                None => {
+                    // First unrecognized token: the candidates are this level's
+                    // names, plus the built-ins when we are still at the root.
+                    let mut candidates: Vec<String> = branch.keys().cloned().collect();
+                    if prefix.is_empty() {
+                        candidates.extend(builtins::BUILTINS.iter().map(|b| b.name.to_string()));
+                        candidates.sort();
+                    }
+                    return closest(tok, &candidates).map(|best| {
+                        prefix.push(best);
+                        prefix.join(" ")
+                    });
+                }
+            }
+        }
+        None // args ran out on a branch (a bare namespace) — no typo to correct
+    }
+}
+
+/// The candidate with the smallest edit distance to `query`, provided it is
+/// within a small, length-scaled threshold so only genuinely close typos are
+/// offered. Ties resolve to the first candidate, so callers passing a sorted
+/// list get a deterministic choice.
+fn closest(query: &str, candidates: &[String]) -> Option<String> {
+    let threshold = 1 + query.chars().count() / 3;
+    candidates
+        .iter()
+        .map(|candidate| (lev_distance(query, candidate), candidate))
+        .filter(|(distance, _)| *distance <= threshold)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate.clone())
+}
+
+/// The Levenshtein edit distance between `a` and `b`, counted in Unicode scalar
+/// values (so multibyte text is handled correctly). Standard two-row
+/// dynamic-programming fill.
+fn lev_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.is_empty() {
+        return b.len();
+    }
+    if b.is_empty() {
+        return a.len();
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0usize; b.len() + 1];
+    for (i, ca) in a.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
 }
 
 #[cfg(test)]
@@ -761,6 +836,58 @@ mod tests {
         assert_eq!(res.usage(&id).as_deref(), Some("rush db migrate"));
         assert_eq!(res.summary().as_deref(), Some("run it"));
         assert_eq!(res.help(&id).as_deref(), Some("long help"));
+    }
+
+    // --- suggestions ("did you mean?") ---
+
+    #[test]
+    fn lev_distance_counts_edits() {
+        assert_eq!(lev_distance("status", "status"), 0);
+        assert_eq!(lev_distance("statsu", "status"), 2); // one transposition
+        assert_eq!(lev_distance("kitten", "sitting"), 3);
+        assert_eq!(lev_distance("", "abc"), 3);
+        assert_eq!(lev_distance("abc", ""), 3);
+    }
+
+    #[test]
+    fn suggest_offers_closest_top_level_command() {
+        let index = index_of(&["status", "deploy"]);
+        assert_eq!(index.suggest(&["statsu"]).as_deref(), Some("status"));
+    }
+
+    #[test]
+    fn suggest_offers_a_builtin_at_the_root() {
+        // Built-ins are candidates only at the top level.
+        assert_eq!(Index::default().suggest(&["helo"]).as_deref(), Some("help"));
+    }
+
+    #[test]
+    fn suggest_corrects_a_subcommand_within_a_namespace() {
+        let index = index_of(&["db migrate", "db seed"]);
+        // The typo is the second token; the suggestion keeps the resolved prefix.
+        assert_eq!(
+            index.suggest(&["db", "migrt"]).as_deref(),
+            Some("db migrate")
+        );
+    }
+
+    #[test]
+    fn suggest_ignores_a_real_commands_trailing_args() {
+        let index = index_of(&["db migrate"]);
+        // `migrate` resolves exactly; `--force` is its arg, not a typo.
+        assert_eq!(index.suggest(&["db", "migrate", "--force"]), None);
+    }
+
+    #[test]
+    fn suggest_returns_none_when_nothing_is_close() {
+        let index = index_of(&["status", "deploy"]);
+        assert_eq!(index.suggest(&["xyzzy"]), None);
+    }
+
+    #[test]
+    fn suggest_returns_none_for_a_bare_namespace() {
+        let index = index_of(&["db migrate"]);
+        assert_eq!(index.suggest(&["db"]), None);
     }
 
     #[test]

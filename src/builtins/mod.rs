@@ -101,6 +101,22 @@ pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
     }
 }
 
+/// Report an unknown command to stderr in the standard form — appended with a
+/// "did you mean?" hint when a close match exists — and return the not-found
+/// exit code. Shared by `main`'s dispatch and the `help`/`source` built-ins so
+/// the wording and suggestion behavior stay identical across all three.
+pub fn report_not_found(ctx: &Context, args: &[String]) -> i32 {
+    eprintln!(
+        "{}: no such command `{}'",
+        ctx.identity.name,
+        args.join(" ")
+    );
+    if let Some(suggestion) = ctx.index.suggest(args) {
+        eprintln!("\nDid you mean `{suggestion}'?");
+    }
+    crate::exit_codes::NOT_FOUND
+}
+
 /// The command-name completions shared by the `help` and `source` built-ins:
 /// the lines to print (one completion per line) and the exit code. With no
 /// tokens it lists the top-level names (built-ins included only when

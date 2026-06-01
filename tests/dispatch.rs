@@ -209,6 +209,40 @@ fn unknown_command_errors() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("no such command `nope'"));
 }
 
+#[test]
+fn unknown_command_suggests_a_close_match() {
+    let tree = program_tree("rush");
+    write_cmd(tree.path(), "status", "#!/bin/sh\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("statsu")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(127));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no such command `statsu'"));
+    assert!(stderr.contains("Did you mean `status'?"));
+}
+
+#[test]
+fn mistyped_subcommand_suggests_within_its_namespace() {
+    let tree = program_tree("rush");
+    write_cmd(tree.path(), "db/migrate", "#!/bin/sh\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["db", "migrt"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(127));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no such command `db migrt'"));
+    assert!(stderr.contains("Did you mean `db migrate'?"));
+}
+
 /// Write an executable at `<root>/<dir>/<rel>`.
 fn write_cmd_in(root: &Path, dir: &str, rel: &str, body: &str) {
     let path = root.join(dir).join(rel);

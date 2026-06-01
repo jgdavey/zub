@@ -31,10 +31,7 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
             eprintln!("{prog}: cannot show source of namespace `{command}'");
             return crate::exit_codes::FAILURE;
         }
-        Resolution::NotFound => {
-            eprintln!("{prog}: no such command `{command}'");
-            return crate::exit_codes::NOT_FOUND;
-        }
+        Resolution::NotFound => return super::report_not_found(ctx, args),
         Resolution::Command { command, .. } => command,
     };
 
