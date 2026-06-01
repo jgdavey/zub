@@ -6,7 +6,7 @@ _zub() {
   local context state state_descr line
   local ret=1
   local -a list
-  local comps has
+  local comps has subcommand
 
   _arguments -C \
              '1: :->cmds' \
