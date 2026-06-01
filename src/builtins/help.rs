@@ -87,7 +87,7 @@ fn program_header(ctx: &Context) -> Option<String> {
                 line.push_str(version);
             }
             if let Some(description) = description {
-                line.push_str(" — ");
+                line.push_str(" - ");
                 line.push_str(description);
             }
             Some(line)
@@ -292,10 +292,10 @@ mod tests {
         };
         assert_eq!(
             program_header(&ctx).as_deref(),
-            Some("rush 1.2.3 — manage the fleet")
+            Some("rush 1.2.3 - manage the fleet")
         );
         // The header opens the top-level table, above `Usage:`.
-        assert!(render_table(&ctx, 80).starts_with("rush 1.2.3 — manage the fleet\n\n"));
+        assert!(render_table(&ctx, 80).starts_with("rush 1.2.3 - manage the fleet\n\n"));
     }
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
         };
         assert_eq!(
             program_header(&ctx).as_deref(),
-            Some("rush — just a description")
+            Some("rush - just a description")
         );
     }
 

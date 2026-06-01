@@ -244,7 +244,7 @@ fn help_header_shows_version_and_description() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.starts_with("rush 9.9.9 — fleet tool"));
+    assert!(stdout.starts_with("rush 9.9.9 - fleet tool"));
 }
 
 #[test]
