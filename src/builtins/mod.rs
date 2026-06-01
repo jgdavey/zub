@@ -83,29 +83,21 @@ pub fn get(name: &str) -> Option<&'static Builtin> {
     BUILTINS.iter().find(|d| d.name == name)
 }
 
+// This is only called by dispatch, which will have already determined
+// a real builtin
 pub fn run(name: &str, args: &[String], ctx: &Context) -> i32 {
     match get(name) {
         Some(doc) => (doc.run)(args, ctx),
-        None => {
-            eprintln!(
-                "{}: built-in `{name}' not implemented yet",
-                ctx.identity.name
-            );
-            crate::exit_codes::FAILURE
-        }
+        None => unreachable!(),
     }
 }
 
+// This is only called by dispatch, which will have already determined
+// a real builtin
 pub fn complete(name: &str, args: &[String], ctx: &Context) -> i32 {
     match get(name) {
         Some(doc) => (doc.complete)(args, ctx),
-        None => {
-            eprintln!(
-                "{}: built-in `{name}' not implemented yet",
-                ctx.identity.name
-            );
-            crate::exit_codes::FAILURE
-        }
+        None => unreachable!(),
     }
 }
 
