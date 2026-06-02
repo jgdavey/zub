@@ -29,7 +29,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-const LEADERS: [&str; 4] = ["//", "--", "#", ";"];
+const LEADERS: [&str; 5] = ["#", ";;", ";", "//", "--"];
 
 /// An error parsing a command's front-matter.
 #[derive(Debug)]
@@ -197,6 +197,59 @@ echo not part of header
 ";
         let fm = parse_str(src);
         assert_eq!(fm.summary.as_deref(), Some("a js command"));
+    }
+
+    #[test]
+    fn supports_double_semicolon_lisp_leader() {
+        // Idiomatic Clojure/Lisp top-level comments use `;;`.
+        let src = "\
+#!/usr/bin/env bb
+;;@ summary: a babashka command
+;;@ usage: rush greet
+;;@ complete: true
+";
+        let fm = parse_str(src);
+        assert_eq!(fm.summary.as_deref(), Some("a babashka command"));
+        assert_eq!(fm.usage.as_deref(), Some("rush greet"));
+        assert!(fm.complete);
+        assert_eq!(fm.interpreter.as_deref(), Some("/usr/bin/env bb"));
+    }
+
+    #[test]
+    fn supports_single_semicolon_lisp_leader() {
+        let src = "\
+#!/usr/bin/env clojure
+;@ summary: a clojure command
+;@ usage: rush run
+";
+        let fm = parse_str(src);
+        assert_eq!(fm.summary.as_deref(), Some("a clojure command"));
+        assert_eq!(fm.usage.as_deref(), Some("rush run"));
+    }
+
+    #[test]
+    fn lisp_leader_preserves_block_scalar_indentation() {
+        let src = "\
+#!/usr/bin/env bb
+;;@ help: |
+;;@   line one
+;;@     deeper
+";
+        let fm = parse_str(src);
+        assert_eq!(fm.help.as_deref(), Some("line one\n  deeper\n"));
+    }
+
+    #[test]
+    fn double_semicolon_leader_is_fixed_once_seen() {
+        // The first marker fixes the leader to `;;`, so a following `;@` line is
+        // not part of the same header and stops the block.
+        let src = "\
+;;@ summary: kept
+;@ usage: ignored
+";
+        let fm = parse_str(src);
+        assert_eq!(fm.summary.as_deref(), Some("kept"));
+        assert_eq!(fm.usage, None);
     }
 
     #[test]
