@@ -1,6 +1,7 @@
 use crate::builtins::{self, Builtin};
-use crate::frontmatter;
+#[cfg(test)]
 use crate::frontmatter::FrontMatter;
+use crate::frontmatter::{self, CommandMeta};
 use crate::identity::Identity;
 use std::collections::BTreeMap;
 use std::fs;
@@ -16,7 +17,8 @@ pub struct Command {
     pub components: Vec<String>,
     /// The executable's filesystem path.
     pub path: PathBuf,
-    pub front: FrontMatter,
+    /// The parsed header — zub `#@` front-matter or a usage `#USAGE` spec.
+    pub meta: CommandMeta,
     pub is_local: bool,
 }
 
@@ -29,6 +31,68 @@ impl Command {
 
     pub fn name(&self) -> String {
         self.components.last().cloned().unwrap_or_default()
+    }
+
+    /// The one-line summary, if documented (zub `summary`, else usage `about`).
+    pub fn summary(&self) -> Option<String> {
+        match &self.meta {
+            CommandMeta::Zub(front) => front.summary.clone(),
+            CommandMeta::Usage(usage) => usage.summary.clone(),
+        }
+    }
+
+    /// The static usage line, if any. `None` for usage commands — their help
+    /// (usage line included) is rendered by the `usage` binary on `--help`.
+    pub fn usage(&self) -> Option<String> {
+        match &self.meta {
+            CommandMeta::Zub(front) => front.usage.clone(),
+            CommandMeta::Usage(_) => None,
+        }
+    }
+
+    /// The static long-form help, if any. `None` for usage commands (delegated).
+    pub fn help(&self) -> Option<String> {
+        match &self.meta {
+            CommandMeta::Zub(front) => front.help.clone(),
+            CommandMeta::Usage(_) => None,
+        }
+    }
+
+    /// Whether this command overrides a built-in of the same name. Usage
+    /// commands cannot — `override` is a zub-only concept.
+    pub fn overrides(&self) -> bool {
+        matches!(&self.meta, CommandMeta::Zub(front) if front.overrides)
+    }
+
+    /// Whether this is a shell-eval command. Usage commands never are — `eval`
+    /// is a zub-only concept.
+    pub fn eval(&self) -> bool {
+        matches!(&self.meta, CommandMeta::Zub(front) if front.eval)
+    }
+
+    /// Whether zub should offer completion for this command. Zub commands opt in
+    /// via `complete: true`; usage commands always do (completion is delegated
+    /// to the `usage` binary).
+    pub fn wants_completion(&self) -> bool {
+        match &self.meta {
+            CommandMeta::Zub(front) => front.complete,
+            CommandMeta::Usage(_) => true,
+        }
+    }
+
+    /// Whether `help <cmd>` should append `--help` and let the command emit the
+    /// rest of its help. True for a zub `dynamic_help` command and for every
+    /// usage command (whose help is rendered entirely by the `usage` binary).
+    pub fn dynamic_help(&self) -> bool {
+        match &self.meta {
+            CommandMeta::Zub(front) => front.dynamic_help,
+            CommandMeta::Usage(_) => true,
+        }
+    }
+
+    /// Whether this command is authored as a usage `#USAGE` spec.
+    pub fn is_usage(&self) -> bool {
+        matches!(&self.meta, CommandMeta::Usage(_))
     }
 }
 
@@ -143,9 +207,7 @@ impl Resolution<'_> {
                 Some(self.extend_placeholders(&identity.name, b.usage.to_string()))
             }
             Resolution::Command { command, .. } => command
-                .front
-                .usage
-                .clone()
+                .usage()
                 .map(|usage| self.extend_placeholders(&identity.name, usage)),
             Resolution::Namespace { .. } | Resolution::NotFound => None,
         }
@@ -155,7 +217,7 @@ impl Resolution<'_> {
     pub fn summary(&self) -> Option<String> {
         match self {
             Resolution::Builtin(b) => Some(b.summary.to_string()),
-            Resolution::Command { command, .. } => command.front.summary.clone(),
+            Resolution::Command { command, .. } => command.summary(),
             Resolution::Namespace { namespace, .. } => {
                 let subs = namespace.subcommands();
                 Some(format!("{} subcommands ({})", subs.len(), subs.join(", ")))
@@ -171,9 +233,7 @@ impl Resolution<'_> {
                 Some(self.extend_placeholders(&identity.name, b.help.to_string()))
             }
             Resolution::Command { command, .. } => command
-                .front
-                .help
-                .clone()
+                .help()
                 .map(|help| self.extend_placeholders(&identity.name, help)),
             Resolution::Namespace { .. } | Resolution::NotFound => None,
         }
@@ -198,7 +258,7 @@ impl Index {
 
         if let Some(builtin) = builtins::get(first) {
             match self.0.get(first) {
-                Some(Node::Leaf(c)) if c.front.overrides => (),
+                Some(Node::Leaf(c)) if c.overrides() => (),
                 _ => {
                     return Resolution::Builtin(builtin);
                 }
@@ -387,19 +447,36 @@ impl Index {
     }
 }
 
-/// Test helper: a leaf `Command` for `name` (space-joined) carrying `front`.
+/// Test helper: a leaf `Command` for `name` (space-joined) carrying `meta`.
 /// The path is synthesized — its exact value is irrelevant to the tests that
 /// use this — and `is_local` is false. Shared across the crate's test modules
 /// so they don't each re-spell the same boilerplate.
 #[cfg(test)]
-pub(crate) fn leaf(name: &str, front: FrontMatter) -> Command {
+pub(crate) fn leaf_meta(name: &str, meta: CommandMeta) -> Command {
     let components: Vec<String> = name.split(' ').map(String::from).collect();
     Command {
         path: PathBuf::from(format!("/libexec/{}", name.replace(' ', "/"))),
         components,
-        front,
+        meta,
         is_local: false,
     }
+}
+
+/// Test helper: a leaf carrying zub `front`-matter (the common case).
+#[cfg(test)]
+pub(crate) fn leaf(name: &str, front: FrontMatter) -> Command {
+    leaf_meta(name, CommandMeta::Zub(front))
+}
+
+/// Test helper: a usage-style leaf carrying the given `summary`.
+#[cfg(test)]
+pub(crate) fn leaf_usage(name: &str, summary: Option<&str>) -> Command {
+    leaf_meta(
+        name,
+        CommandMeta::Usage(crate::frontmatter::UsageMeta {
+            summary: summary.map(String::from),
+        }),
+    )
 }
 
 /// Test helper: an `Index` built from space-joined `names`, each a leaf with
@@ -518,17 +595,17 @@ fn scan_dir(
         }
         // A malformed command's front-matter shouldn't break discovery: warn
         // (so the author hears about it) and fall back to no documentation.
-        let front = match frontmatter::parse_file(&path) {
-            Ok(front) => front,
+        let meta = match frontmatter::parse_command_file(&path) {
+            Ok(meta) => meta,
             Err(err) => {
                 eprintln!("{name}: {}: {err}", path.display());
-                FrontMatter::default()
+                CommandMeta::default()
             }
         };
         let command = Command {
             components,
             path,
-            front,
+            meta,
             is_local,
         };
         let comps = command.components.clone();
@@ -606,9 +683,36 @@ mod tests {
         let names: Vec<String> = index.leaves().iter().map(|c| c.full_name()).collect();
         assert_eq!(names, vec!["where", "who"]);
         assert_eq!(
-            index.get_command("who").unwrap().front.summary.as_deref(),
+            index.get_command("who").unwrap().summary().as_deref(),
             Some("who")
         );
+    }
+
+    #[test]
+    fn discover_reads_usage_about_as_summary() {
+        let root = tempdir().unwrap();
+        write_exec(
+            root.path(),
+            "greet",
+            "#!/usr/bin/env -S usage bash\n#USAGE about \"Greet a person\"\n",
+        );
+        let index = discover(&id_for(root.path(), None));
+        let cmd = index.get_command("greet").unwrap();
+        assert!(cmd.is_usage());
+        assert_eq!(cmd.summary().as_deref(), Some("Greet a person"));
+    }
+
+    #[test]
+    fn usage_command_accessors_disable_zub_only_features() {
+        let cmd = leaf_usage("greet", Some("Greet a person"));
+        assert!(cmd.is_usage());
+        assert_eq!(cmd.summary().as_deref(), Some("Greet a person"));
+        assert_eq!(cmd.usage(), None); // help (usage line included) is delegated
+        assert_eq!(cmd.help(), None);
+        assert!(!cmd.overrides()); // zub-only
+        assert!(!cmd.eval()); // zub-only
+        assert!(cmd.wants_completion()); // always, via the usage binary
+        assert!(cmd.dynamic_help()); // help is always delegated to `--help`
     }
 
     #[test]
@@ -675,7 +779,7 @@ mod tests {
         write_exec(root.path(), "db/migrate", "#!/bin/sh\n");
         let index = discover(&id_for(root.path(), Some(local.path().to_path_buf())));
         assert_eq!(
-            index.get_command("db").unwrap().front.summary.as_deref(),
+            index.get_command("db").unwrap().summary().as_deref(),
             Some("local-db")
         );
         assert!(!index.is_namespace(&["db"])); // root's db/migrate was dropped
@@ -692,7 +796,7 @@ mod tests {
         let leaves = index.leaves();
         assert_eq!(leaves.len(), 1);
         assert!(leaves[0].is_local);
-        assert_eq!(leaves[0].front.summary.as_deref(), Some("local"));
+        assert_eq!(leaves[0].summary().as_deref(), Some("local"));
     }
 
     #[test]

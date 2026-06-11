@@ -322,3 +322,110 @@ fn command_roots_overlay_later_root_wins() {
     assert_eq!(run("hi"), "from-over"); // overlay wins the collision
     assert_eq!(run("base-only"), "base-only"); // base still scanned
 }
+
+// --- usage-style (`#USAGE`) commands ---
+
+/// Whether the `usage` binary is on `PATH`. Tests that delegate to it skip
+/// (rather than fail) when it is absent, so the suite stays green without it.
+fn usage_available() -> bool {
+    Command::new("usage")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// A usage-style command's `about` is read in-house (no `usage` binary needed)
+/// and shown as its summary in the command listing.
+#[test]
+fn usage_command_summary_listed_without_usage_binary() {
+    let tree = program_tree("rush");
+    write_cmd(
+        tree.path(),
+        "greet",
+        "#!/usr/bin/env -S usage bash\n\
+         #USAGE about \"Greet a person\"\n\
+         #USAGE arg \"<name>\"\n\
+         echo \"hi $usage_name\"\n",
+    );
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("help") // bare help prints the top-level table
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("greet"), "got: {stdout}");
+    assert!(stdout.contains("Greet a person"), "got: {stdout}");
+}
+
+/// `help <cmd>` for a usage command delegates entirely to the `usage` binary
+/// (via the script's `--help`), with no static front-matter rendered by zub.
+#[test]
+fn usage_command_help_delegates_to_usage_binary() {
+    if !usage_available() {
+        eprintln!("skipping: `usage` binary not installed");
+        return;
+    }
+    let tree = program_tree("rush");
+    write_cmd(
+        tree.path(),
+        "greet",
+        "#!/usr/bin/env -S usage bash\n\
+         #USAGE about \"Greet a person\"\n\
+         #USAGE flag \"-l --loud\" help=\"Shout\"\n\
+         #USAGE arg \"<name>\" help=\"Who to greet\"\n\
+         echo \"hi $usage_name\"\n",
+    );
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["help", "greet"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // usage renders the full help, including the flag declared in the spec.
+    assert!(stdout.contains("--loud"), "got: {stdout}");
+    assert!(stdout.contains("Greet a person"), "got: {stdout}");
+}
+
+/// Completion for a usage command is delegated to `usage complete-word`, whose
+/// candidates zub re-emits in its `name[summary]` format.
+#[test]
+fn usage_command_completion_delegates_to_usage_binary() {
+    if !usage_available() {
+        eprintln!("skipping: `usage` binary not installed");
+        return;
+    }
+    let tree = program_tree("rush");
+    write_cmd(
+        tree.path(),
+        "greet",
+        "#!/usr/bin/env -S usage bash\n\
+         #USAGE about \"Greet a person\"\n\
+         #USAGE flag \"-l --loud\" help=\"Shout\"\n\
+         #USAGE flag \"-g --greeting <greeting>\" help=\"Greeting word\"\n\
+         #USAGE arg \"<name>\"\n\
+         echo hi\n",
+    );
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .env("COMP_WORD", "--") // completing a flag
+        .args(["completions", "greet"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The flags from the spec come back, in zub's `name[summary]` format.
+    assert!(stdout.contains("--loud[Shout]"), "got: {stdout}");
+    assert!(
+        stdout.contains("--greeting[Greeting word]"),
+        "got: {stdout}"
+    );
+}

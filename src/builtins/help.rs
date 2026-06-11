@@ -177,9 +177,11 @@ pub fn run(args: &[String], ctx: &Context) -> i32 {
         }
         res => {
             // A `dynamic_help` command appends its own `--help` output, so it is
-            // shown even when it has no static front-matter to render.
+            // shown even when it has no static front-matter to render. Usage
+            // commands are always dynamic: their entire help is rendered by the
+            // `usage` binary via `--help` (see `Command::dynamic_help`).
             let dynamic = match &res {
-                Resolution::Command { command } if command.front.dynamic_help => Some(*command),
+                Resolution::Command { command } if command.dynamic_help() => Some(*command),
                 _ => None,
             };
             // An undocumented command still gets help: synthesize a usage line
