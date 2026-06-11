@@ -16,8 +16,8 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
     }
     for c in ctx.index.leaves() {
         let keep = match mode {
-            Some("--eval") => c.eval(),
-            Some("--no-eval") => !c.eval(),
+            Some("--eval") => c.meta.eval(),
+            Some("--no-eval") => !c.meta.eval(),
             _ => true,
         };
         if keep {

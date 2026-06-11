@@ -56,6 +56,70 @@ impl Default for CommandMeta {
     }
 }
 
+impl CommandMeta {
+    /// The one-line summary, if documented (zub `summary`, else usage `about`).
+    pub fn summary(&self) -> Option<String> {
+        match self {
+            CommandMeta::Zub(front) => front.summary.clone(),
+            CommandMeta::Usage(usage) => usage.summary.clone(),
+        }
+    }
+
+    /// The static usage line, if any. `None` for usage commands — their help
+    /// (usage line included) is rendered by the `usage` binary on `--help`.
+    pub fn usage(&self) -> Option<String> {
+        match self {
+            CommandMeta::Zub(front) => front.usage.clone(),
+            CommandMeta::Usage(_) => None,
+        }
+    }
+
+    /// The static long-form help, if any. `None` for usage commands (delegated).
+    pub fn help(&self) -> Option<String> {
+        match self {
+            CommandMeta::Zub(front) => front.help.clone(),
+            CommandMeta::Usage(_) => None,
+        }
+    }
+
+    /// Whether this command overrides a built-in of the same name. Usage
+    /// commands cannot — `override` is a zub-only concept.
+    pub fn overrides(&self) -> bool {
+        matches!(self, CommandMeta::Zub(front) if front.overrides)
+    }
+
+    /// Whether this is a shell-eval command. Usage commands never are — `eval`
+    /// is a zub-only concept.
+    pub fn eval(&self) -> bool {
+        matches!(self, CommandMeta::Zub(front) if front.eval)
+    }
+
+    /// Whether zub should offer completion for this command. Zub commands opt in
+    /// via `complete: true`; usage commands always do (completion is delegated
+    /// to the `usage` binary).
+    pub fn wants_completion(&self) -> bool {
+        match self {
+            CommandMeta::Zub(front) => front.complete,
+            CommandMeta::Usage(_) => true,
+        }
+    }
+
+    /// Whether `help <cmd>` should append `--help` and let the command emit the
+    /// rest of its help. True for a zub `dynamic_help` command and for every
+    /// usage command (whose help is rendered entirely by the `usage` binary).
+    pub fn dynamic_help(&self) -> bool {
+        match self {
+            CommandMeta::Zub(front) => front.dynamic_help,
+            CommandMeta::Usage(_) => true,
+        }
+    }
+
+    /// Whether this command is authored as a usage `#USAGE` spec.
+    pub fn is_usage(&self) -> bool {
+        matches!(self, CommandMeta::Usage(_))
+    }
+}
+
 /// The slice of a usage spec zub reads in-process: just the one-line summary
 /// (the spec's `about` directive). Everything else a usage command needs —
 /// argument parsing, help, completion — is delegated to the `usage` binary, so
@@ -641,5 +705,44 @@ echo hi
         assert!(try_parse_command_str("#@ : : : not yaml\n").is_err());
         // A usage block never errors.
         assert!(try_parse_command_str("#USAGE about \"x\"\n").is_ok());
+    }
+
+    // --- CommandMeta accessors ---
+
+    #[test]
+    fn usage_meta_accessors_disable_zub_only_features() {
+        let meta = CommandMeta::Usage(UsageMeta {
+            summary: Some("Greet a person".into()),
+        });
+        assert!(meta.is_usage());
+        assert_eq!(meta.summary().as_deref(), Some("Greet a person"));
+        assert_eq!(meta.usage(), None); // help (usage line included) is delegated
+        assert_eq!(meta.help(), None);
+        assert!(!meta.overrides()); // zub-only
+        assert!(!meta.eval()); // zub-only
+        assert!(meta.wants_completion()); // always, via the usage binary
+        assert!(meta.dynamic_help()); // help is always delegated to `--help`
+    }
+
+    #[test]
+    fn zub_meta_reflects_front_matter_flags() {
+        let meta = CommandMeta::Zub(FrontMatter {
+            summary: Some("s".into()),
+            usage: Some("u".into()),
+            help: Some("h".into()),
+            complete: true,
+            eval: true,
+            dynamic_help: true,
+            overrides: true,
+            ..Default::default()
+        });
+        assert!(!meta.is_usage());
+        assert_eq!(meta.summary().as_deref(), Some("s"));
+        assert_eq!(meta.usage().as_deref(), Some("u"));
+        assert_eq!(meta.help().as_deref(), Some("h"));
+        assert!(meta.overrides());
+        assert!(meta.eval());
+        assert!(meta.wants_completion());
+        assert!(meta.dynamic_help());
     }
 }

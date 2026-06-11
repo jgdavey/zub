@@ -38,7 +38,7 @@ pub fn plan<'a>(settled: &[String], partial: Option<String>, ctx: &'a Context) -
                 args,
             }
         }
-        Resolution::Command { command } if command.is_usage() => {
+        Resolution::Command { command } if command.meta.is_usage() => {
             let after = &settled[command.components.len()..];
             let (words, cword) = usage_words(&command.name(), after, partial.unwrap_or_default());
             CompAction::UsageComplete {
@@ -48,7 +48,7 @@ pub fn plan<'a>(settled: &[String], partial: Option<String>, ctx: &'a Context) -
             }
         }
         Resolution::Command { command } => {
-            if !command.wants_completion() {
+            if !command.meta.wants_completion() {
                 return CompAction::Fallback;
             }
             let args = settled[command.components.len()..].to_vec();

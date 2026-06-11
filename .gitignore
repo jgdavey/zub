@@ -1,3 +1,5 @@
 /target/
 /.claude/
 __pycache__/
+# Emacs lock files
+.#*
