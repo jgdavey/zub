@@ -380,6 +380,52 @@ So `rush deploy <Tab>` offers `staging production --region`, while
 Run the `init` subcommand after you've prepared your program to get it loading
 automatically in your shell.
 
+## Usage-style subcommands (optional)
+
+If you'd rather not hand-write a `--complete` branch and a `--help` block, a
+subcommand can instead be authored as a [usage](https://usage.jdx.dev/) spec.
+[`usage`](https://usage.jdx.dev/) is jdx's CLI-spec tool: you declare your
+command's args, flags, and completions once, and it handles parsing, `--help`,
+and shell completion for you. zub recognizes such scripts and stays out of their
+way.
+
+A usage-style subcommand looks like a normal script whose **shebang invokes
+`usage`** and whose spec lives in `#USAGE` comments at the top:
+
+``` bash
+#!/usr/bin/env -S usage bash
+#USAGE about "Greet a person, maybe loudly"
+#USAGE flag "-l --loud" help="Shout the greeting"
+#USAGE arg "<name>" help="Who to greet"
+
+greeting="Hello, ${usage_name}"
+[ "$usage_loud" = "true" ] && greeting="${greeting^^}"
+echo "$greeting"
+```
+
+At runtime the `usage` binary (named in the shebang) parses the arguments and
+exports a `usage_*` variable for each one — zub adds nothing here beyond the
+`ZUB_*` env it gives every subcommand. So **this style requires `usage` to be on
+your `PATH`**; that's the one extra dependency, and the shebang is what pulls it
+in.
+
+zub detects the `#USAGE` block (versus zub's own `#@`) and adapts:
+
+- **Listings** (`rush` and `rush commands`) show the spec's `about` text as the
+  one-line summary — the only field zub reads in-process.
+- **`rush help <command>`** runs the command with `--help` and lets `usage`
+  render the whole help screen, so it reads exactly like the standalone script.
+- **Completion** is automatic — no `complete: true`, no `--complete` branch. zub
+  delegates to `usage`, which completes from the spec.
+
+The zub-only keys (`eval`, `override`, `dynamic_help`) don't apply to usage
+commands; everything those would do is the `usage` binary's job here.
+
+> [!NOTE]
+> This is entirely opt-in and per-command: a program can freely mix `#@` zub
+> commands and `#USAGE` usage commands. A command with neither marker just gets
+> no documentation, exactly as before.
+
 ## Roadmap
 
 - [x] Provide a script to convert script headers from old to new format
@@ -391,6 +437,7 @@ automatically in your shell.
 - [x] Add dynamic help support (calling `<name> <sub> --help` instead of front-matter)
 - [x] scaffold: allow custom root path
 - [x] Improve documentation on custom completions
+- [x] Optional integration with usage specs
 - [ ] (possibly) Cache indexed commands (if perf becomes an issue)
 - [ ] (possibly) static completion in front-matter?
 
