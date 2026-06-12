@@ -134,16 +134,36 @@ zub *does* rely on: the detection regex and the `about` directive shape.
 
 ## Detection
 
-Reuse the existing leading contiguous comment run after the shebang. Classify by
-the first marker token seen:
+Read the leading comment run after the shebang and classify by marker token:
 
-- a line matching `<leader>@` → **zub** command (parse YAML as today)
-- a line matching `<leader>USAGE` (`#`/`//`/`::` + `USAGE`/`[USAGE]`) →
-  **usage** command (extract block, `Spec::from_str`)
+- a line matching `<leader>@` on the **first comment after the shebang** →
+  **zub** command (parse YAML as today)
+- a line matching a usage sigil (`#`/`//`/`::` leader + one of `USAGE`,
+  `[USAGE]`, ` [USAGE]`) → **usage** command (extract block, `Spec::from_str`)
 - neither → default/no metadata
 
-No new opt-in key is required. Keep the contiguous-block rule for both families
-to preserve fast discovery (do not adopt usage's whole-file scan).
+No new opt-in key is required.
+
+**Sigil forms.** These mirror usage-lib's regex `^(?:#|//|::)(?:USAGE| ?\[USAGE\])`
+exactly — bare `USAGE`, `[USAGE]`, or `# [USAGE]` (one optional space before the
+bracket). The spaced bare form `# USAGE` is **not** recognized, matching
+usage-lib. The **first directive line of a block fixes the sigil** (its exact
+leader + keyword form); the rest of the block must repeat that form to continue
+it. A line using a different form ends the block, just like a line of code does —
+so a block's formatting stays internally consistent.
+
+The two families differ in how strict the opener is. zub stays strict: a `#@`
+block is recognized only as the first comment after the shebang. usage is
+lenient, matching usage-lib, which scans the *whole* file for the block: a
+`#USAGE` block may follow a blank/comment preamble (a license header, blank
+lines), so detection skips that preamble before reading the contiguous block.
+
+To keep this from breaking zub's fast lazy-header discovery (we must not read an
+entire header-less script just to learn it has no metadata), the preamble scan
+stops at the **first line of real code** — i.e. the first non-blank, non-comment
+line. This handles the realistic edge cases usage-lib allows (comments/blanks
+before the block) without adopting its unbounded whole-file scan; a `#USAGE`
+block placed *after* code is the one case we deliberately don't detect.
 
 ## Architecture changes
 

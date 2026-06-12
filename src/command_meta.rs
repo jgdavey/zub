@@ -31,9 +31,25 @@ use std::path::Path;
 
 const LEADERS: [&str; 5] = ["#", ";;", ";", "//", "--"];
 
-/// Comment leaders that introduce a usage `#USAGE` directive. Mirrors the
-/// extractor regex usage-lib uses: `^(?:#|//|::)(?:USAGE| ?\[USAGE\])`.
+/// Comment leaders that introduce a usage directive. These mirror usage-lib's
+/// extractor regex `^(?:#|//|::)(?:USAGE| ?\[USAGE\])`.
 const USAGE_LEADERS: [&str; 3] = ["#", "//", "::"];
+
+/// The keyword forms a usage directive may take after its leader: bare or
+/// bracketed, each optionally preceded by a single space — `USAGE`, `[USAGE]`,
+/// and ` [USAGE]`. usage-lib recognizes all of these. Order matters only in
+/// that longer prefixes can't shadow shorter ones here, and each are mutually
+/// exclusive (their first byte after the leader is `U`, ` `, or `[`).
+const USAGE_KEYWORDS: [&str; 3] = ["USAGE", "[USAGE]", " [USAGE]"];
+
+/// A concrete usage sigil: a [leader](USAGE_LEADERS) paired with a
+/// [keyword](USAGE_KEYWORDS) form. The first directive line of a block fixes the
+/// sigil; the rest of the block must repeat that exact form to continue it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct UsageSigil {
+    leader: &'static str,
+    keyword: &'static str,
+}
 
 /// One subcommand's parsed header. A command is authored in exactly one of two
 /// styles, distinguished by its marker sigil (see [`parse_command_str`]):
@@ -243,8 +259,9 @@ pub fn parse_file(path: &Path) -> Result<FrontMatter, ParseError> {
 
 // --- usage (`#USAGE`) support ---------------------------------------------
 
-/// Which header style a script uses, decided by the first comment line after
-/// the shebang (the marker sigils are disjoint: `#@` is zub, `#USAGE` is usage).
+/// Which header style a script uses, decided by its opening marker (the marker
+/// sigils are disjoint: `#@` is zub, `#USAGE` is usage). zub's `#@` must open the
+/// first comment after the shebang; a `#USAGE` block may follow a preamble.
 enum Family {
     Zub,
     Usage,
@@ -252,36 +269,65 @@ enum Family {
     None,
 }
 
-/// Strip a usage marker (`#USAGE` / `//USAGE` / `::USAGE`, or the bracketed
-/// `[USAGE]` form) from `line`, returning the directive text after it. Returns
-/// `None` when the line is not a usage directive. Mirrors usage-lib's regex
-/// `^(?:#|//|::)(?:USAGE| ?\[USAGE\])(.*)$`.
-fn strip_usage_marker(line: &str) -> Option<&str> {
+/// Match a usage marker at the start of `line`, returning the sigil it used and
+/// the directive text after it. `None` when the line is not a usage directive.
+///
+/// When `locked` is `Some`, only that exact sigil is accepted — this is how a
+/// block enforces a consistent format after its first line fixes one. When
+/// `None`, any of the [`USAGE_LEADERS`] × [`USAGE_KEYWORDS`] forms matches.
+fn match_usage_marker(line: &str, locked: Option<UsageSigil>) -> Option<(UsageSigil, &str)> {
+    if let Some(sigil) = locked {
+        return line
+            .strip_prefix(sigil.leader)
+            .and_then(|rest| rest.strip_prefix(sigil.keyword))
+            .map(|content| (sigil, content));
+    }
     for leader in USAGE_LEADERS {
         let Some(rest) = line.strip_prefix(leader) else {
             continue;
         };
-        for keyword in ["USAGE", " [USAGE]", "[USAGE]"] {
+        for keyword in USAGE_KEYWORDS {
             if let Some(content) = rest.strip_prefix(keyword) {
-                return Some(content);
+                return Some((UsageSigil { leader, keyword }, content));
             }
         }
     }
     None
 }
 
-/// Whether `line` is a blank comment (`#`, `//`, `::` with only whitespace
-/// after). usage tolerates these inside a `#USAGE` block, so they don't end it.
-fn is_blank_comment(line: &str) -> bool {
-    USAGE_LEADERS.iter().any(|leader| {
+/// Whether `line` is a blank comment under `leader` (the leader with only
+/// whitespace after). usage tolerates these inside a block, so they don't end
+/// it. `None` checks every leader; `Some(l)` only `l` (a locked block continues
+/// only under its own leader).
+fn is_blank_comment_under(line: &str, leader: Option<&str>) -> bool {
+    let leaders: &[&str] = match &leader {
+        Some(l) => std::slice::from_ref(l),
+        None => &USAGE_LEADERS,
+    };
+    leaders.iter().any(|leader| {
         line.strip_prefix(leader)
             .is_some_and(|rest| rest.trim().is_empty())
     })
 }
 
+/// Whether `line` is a blank comment under any recognized leader.
+fn is_blank_comment(line: &str) -> bool {
+    is_blank_comment_under(line, None)
+}
+
+/// Whether `line` is preamble a `#USAGE` block is allowed to follow: a fully
+/// blank line or any comment line (a license header, a stray comment, …).
+/// usage-lib finds the block by scanning the *whole* file; we mirror that
+/// leniency for the realistic preamble (blanks and comments) but stop at the
+/// first line of actual code, so a header-less script is never read past its
+/// top — preserving zub's fast-discovery invariant without a whole-file scan.
+fn is_usage_preamble(line: &str) -> bool {
+    line.trim().is_empty() || USAGE_LEADERS.iter().any(|leader| line.starts_with(leader))
+}
+
 /// Whether `line` opens or continues a header block of either family.
 fn is_marker(line: &str) -> bool {
-    strip_marker(line, &None).is_some() || strip_usage_marker(line).is_some()
+    strip_marker(line, &None).is_some() || match_usage_marker(line, None).is_some()
 }
 
 /// Advance past a leading shebang line, returning the first line after it (the
@@ -293,31 +339,62 @@ fn skip_shebang<'a, I: Iterator<Item = &'a str>>(lines: &mut I) -> Option<&'a st
     }
 }
 
-/// Classify a script by its first comment line after the shebang.
+/// Classify a script by the header it opens with.
+///
+/// zub stays strict: a `#@` block must open on the first comment line after the
+/// shebang. usage is lenient, like usage-lib: a `#USAGE` block may follow a
+/// blank/comment preamble, so we scan past it — stopping at the first line of
+/// real code (where a header-less script ends our scan).
 fn classify(source: &str) -> Family {
     let mut lines = source.lines();
-    match skip_shebang(&mut lines) {
-        Some(line) if strip_usage_marker(line).is_some() => Family::Usage,
-        Some(line) if strip_marker(line, &None).is_some() => Family::Zub,
-        _ => Family::None,
+    let mut current = skip_shebang(&mut lines);
+    // zub's `#@` is authoritative only as the opening comment.
+    if current.is_some_and(|line| strip_marker(line, &None).is_some()) {
+        return Family::Zub;
     }
+    while let Some(line) = current {
+        if match_usage_marker(line, None).is_some() {
+            return Family::Usage;
+        }
+        if !is_usage_preamble(line) {
+            break;
+        }
+        current = lines.next();
+    }
+    Family::None
 }
 
-/// Extract the summary (the `about` directive's value) from a usage header,
-/// reading only the contiguous `#USAGE` block after the shebang. `None` when no
-/// `about` is declared, or when its value is not a plain double-quoted string
-/// (KDL raw/multiline strings are an accepted blind spot — see the design doc).
+/// Extract the summary (the `about` directive's value) from a usage header.
+/// Skips a leading blank/comment preamble to find the `#USAGE` block (mirroring
+/// usage-lib), then reads only the contiguous block. `None` when no `about` is
+/// declared, or when its value is not a plain double-quoted string (KDL
+/// raw/multiline strings are an accepted blind spot — see the design doc).
 fn extract_usage_summary(source: &str) -> Option<String> {
     let mut lines = source.lines();
     let mut current = skip_shebang(&mut lines);
+    // Advance to the block's opening directive, past any preamble. The sigil it
+    // uses (e.g. `# [USAGE]`) is fixed for the rest of the block.
+    let sigil = loop {
+        let line = current?;
+        if let Some((sigil, _)) = match_usage_marker(line, None) {
+            break sigil;
+        }
+        if !is_usage_preamble(line) {
+            return None; // code before any usage directive — not a usage header
+        }
+        current = lines.next();
+    };
+    // Read the contiguous block, accepting only the locked sigil. A blank
+    // comment under the same leader continues it; anything else (code, or a
+    // differently-formatted directive) ends it.
     while let Some(line) = current {
-        match strip_usage_marker(line) {
-            Some(directive) => {
+        match match_usage_marker(line, Some(sigil)) {
+            Some((_, directive)) => {
                 if let Some(summary) = summary_from_directive(directive) {
                     return Some(summary);
                 }
             }
-            None if is_blank_comment(line) => {}
+            None if is_blank_comment_under(line, Some(sigil.leader)) => {}
             None => break,
         }
         current = lines.next();
@@ -398,13 +475,31 @@ fn read_header(path: &Path) -> io::Result<String> {
     } else {
         first
     };
-    // The first comment line after the shebang must be a marker, or there is no
-    // header (a bare shebang already pushed above is enough to keep the
-    // interpreter).
-    if !is_marker(&after_shebang) {
-        return Ok(out);
+
+    // Find the line that opens the header block. A zub `#@` block must open on
+    // the first comment after the shebang. A `#USAGE` block may also follow a
+    // blank/comment preamble (usage-lib tolerates it), so we skip that preamble
+    // — but stop at the first line of real code, so a header-less script is not
+    // read past its top (a bare shebang already pushed above keeps the
+    // interpreter). The preamble is dropped: `out` holds the shebang plus the
+    // block, which is all classification and extraction need.
+    let mut opener = after_shebang;
+    if strip_marker(&opener, &None).is_none() {
+        loop {
+            if match_usage_marker(&opener, None).is_some() {
+                break;
+            }
+            if !is_usage_preamble(&opener) {
+                return Ok(out);
+            }
+            match lines.next().transpose()? {
+                Some(line) => opener = line,
+                None => return Ok(out),
+            }
+        }
     }
-    out.push_str(&after_shebang);
+
+    out.push_str(&opener);
     out.push('\n');
     for line in lines {
         let line = line?;
@@ -638,6 +733,71 @@ echo hi
     }
 
     #[test]
+    fn usage_block_may_follow_a_blank_or_comment_preamble() {
+        // usage-lib finds the block anywhere in the file; we tolerate the
+        // realistic preamble (blank lines and leading comments) before it.
+        let src = "\
+#!/usr/bin/env -S usage bash
+
+# a leading comment / license header
+#USAGE about \"deferred block\"
+";
+        assert_eq!(
+            parse_command_str(src),
+            CommandMeta::Usage(UsageMeta {
+                summary: Some("deferred block".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn code_before_usage_block_is_not_a_usage_header() {
+        // We stop the scan at the first line of real code, so a `#USAGE` block
+        // that only appears after code is not detected (bounds discovery cost).
+        let src = "#!/usr/bin/env bash\nset -e\n#USAGE about \"too late\"\n";
+        assert!(matches!(parse_command_str(src), CommandMeta::Zub(_)));
+    }
+
+    #[test]
+    fn zub_block_stays_strict_after_a_preamble() {
+        // The preamble leniency is usage-only: a `#@` block is still recognized
+        // solely as the opening comment after the shebang.
+        let src = "#!/bin/sh\n# leading comment\n#@ summary: ignored\n";
+        match parse_command_str(src) {
+            CommandMeta::Zub(fm) => assert_eq!(fm.summary, None),
+            other => panic!("expected default zub, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_header_finds_block_after_preamble_but_stops_at_code() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+
+        // A block after a comment/blank preamble is read from the file.
+        let deferred = dir.path().join("deferred");
+        let mut f = File::create(&deferred).unwrap();
+        f.write_all(b"#!/usr/bin/env -S usage bash\n\n# header\n#USAGE about \"found\"\necho hi\n")
+            .unwrap();
+        assert_eq!(
+            parse_command_file(&deferred).unwrap(),
+            CommandMeta::Usage(UsageMeta {
+                summary: Some("found".into()),
+            })
+        );
+
+        // Code before the block stops the scan: no usage header is read.
+        let buried = dir.path().join("buried");
+        let mut f = File::create(&buried).unwrap();
+        f.write_all(b"#!/usr/bin/env bash\nset -e\n#USAGE about \"buried\"\n")
+            .unwrap();
+        assert!(matches!(
+            parse_command_file(&buried).unwrap(),
+            CommandMeta::Zub(_)
+        ));
+    }
+
+    #[test]
     fn usage_without_about_has_no_summary() {
         let src = "#!/usr/bin/env -S usage bash\n#USAGE flag \"-l --loud\"\n";
         assert_eq!(
@@ -662,17 +822,63 @@ echo hi
         assert_eq!(summary_from_directive(r#"about_long "x""#), None);
     }
 
+    /// The directive content after each leader × keyword sigil form.
+    fn usage_content(line: &str) -> Option<&str> {
+        match_usage_marker(line, None).map(|(_, content)| content)
+    }
+
     #[test]
     fn double_slash_and_double_colon_usage_leaders() {
-        assert_eq!(
-            strip_usage_marker("//USAGE about \"x\""),
-            Some(" about \"x\"")
-        );
-        assert_eq!(
-            strip_usage_marker("::USAGE about \"x\""),
-            Some(" about \"x\"")
-        );
-        assert_eq!(strip_usage_marker("#@ summary: x"), None);
+        assert_eq!(usage_content("//USAGE about \"x\""), Some(" about \"x\""));
+        assert_eq!(usage_content("::USAGE about \"x\""), Some(" about \"x\""));
+        assert_eq!(usage_content("#@ summary: x"), None);
+    }
+
+    #[test]
+    fn all_sigil_forms_are_recognized() {
+        // `#USAGE`, `#[USAGE]`, `# [USAGE]` all introduce a directive and yield
+        // the same trailing content (matching usage-lib; bare `# USAGE` does not).
+        for line in [
+            "#USAGE about \"x\"",
+            "#[USAGE] about \"x\"",
+            "# [USAGE] about \"x\"",
+        ] {
+            assert_eq!(usage_content(line), Some(" about \"x\""), "for {line:?}");
+        }
+        // The spaced bare form is not a usage directive (usage-lib omits it).
+        assert_eq!(usage_content("# USAGE about \"x\""), None);
+    }
+
+    #[test]
+    fn each_sigil_form_extracts_a_summary() {
+        for opener in ["#USAGE", "#[USAGE]", "# [USAGE]"] {
+            let src = format!("#!/usr/bin/env -S usage bash\n{opener} about \"hi\"\n");
+            assert_eq!(
+                extract_usage_summary(&src).as_deref(),
+                Some("hi"),
+                "for opener {opener:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn first_sigil_form_locks_the_rest_of_the_block() {
+        // The opener uses `# [USAGE]`; a later bare `#USAGE` line is a different
+        // sigil, so it ends the block and its `about` is not read.
+        let src = "\
+#!/usr/bin/env -S usage bash
+# [USAGE] bin \"greet\"
+#USAGE about \"wrong form\"
+";
+        assert_eq!(extract_usage_summary(src), None);
+
+        // When every line repeats the locked form, the block reads through.
+        let src = "\
+#!/usr/bin/env -S usage bash
+# [USAGE] bin \"greet\"
+# [USAGE] about \"right form\"
+";
+        assert_eq!(extract_usage_summary(src).as_deref(), Some("right form"));
     }
 
     /// The two sigils are disjoint: a zub `#@` script is never read as usage,
