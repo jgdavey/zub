@@ -195,7 +195,7 @@ fn print_summaries(ctx: &Context) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontmatter::FrontMatter;
+    use crate::command_meta::FrontMatter;
     use crate::identity::fixture;
     use crate::index::{self, Index};
     use std::path::PathBuf;

@@ -233,7 +233,7 @@ fn run_dynamic_help(command: &Command, program: &str, printed: bool) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frontmatter::FrontMatter;
+    use crate::command_meta::FrontMatter;
     use crate::identity::{fixture, Identity};
     use crate::index::{self, Index};
 

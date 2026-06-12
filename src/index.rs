@@ -1,7 +1,7 @@
 use crate::builtins::{self, Builtin};
 #[cfg(test)]
-use crate::frontmatter::FrontMatter;
-use crate::frontmatter::{self, CommandMeta};
+use crate::command_meta::FrontMatter;
+use crate::command_meta::{self, CommandMeta};
 use crate::identity::Identity;
 use std::collections::BTreeMap;
 use std::fs;
@@ -413,7 +413,7 @@ pub(crate) fn leaf(name: &str, front: FrontMatter) -> Command {
 pub(crate) fn leaf_usage(name: &str, summary: Option<&str>) -> Command {
     leaf_meta(
         name,
-        CommandMeta::Usage(crate::frontmatter::UsageMeta {
+        CommandMeta::Usage(crate::command_meta::UsageMeta {
             summary: summary.map(String::from),
         }),
     )
@@ -535,7 +535,7 @@ fn scan_dir(
         }
         // A malformed command's front-matter shouldn't break discovery: warn
         // (so the author hears about it) and fall back to no documentation.
-        let meta = match frontmatter::parse_command_file(&path) {
+        let meta = match command_meta::parse_command_file(&path) {
             Ok(meta) => meta,
             Err(err) => {
                 eprintln!("{name}: {}: {err}", path.display());

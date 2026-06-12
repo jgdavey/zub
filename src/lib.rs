@@ -1,7 +1,7 @@
 pub mod builtins;
+pub mod command_meta;
 pub mod config;
 pub mod env_setup;
-pub mod frontmatter;
 pub mod identity;
 pub mod index;
 pub mod scaffold;

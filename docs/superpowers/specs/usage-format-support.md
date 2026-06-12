@@ -311,4 +311,4 @@ implementation (the header-module split, the `about` parse, and wiring the
 - usage spec reference: <https://usage.jdx.dev/spec/>
 - `complete` directive: <https://usage.jdx.dev/spec/reference/complete>
 - `usage-lib` API: <https://docs.rs/usage-lib/latest/usage/>
-- zub front-matter parser: `src/frontmatter.rs`
+- zub front-matter parser: `src/command_meta.rs`
