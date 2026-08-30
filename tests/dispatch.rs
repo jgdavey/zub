@@ -485,7 +485,7 @@ fn subcommand_sees_zub_local_root() {
         Path::new(String::from_utf8_lossy(&out.stdout).trim())
             .canonicalize()
             .unwrap(),
-        work.path().canonicalize().unwrap()
+        work.path().join(".rush").canonicalize().unwrap()
     );
 }
 

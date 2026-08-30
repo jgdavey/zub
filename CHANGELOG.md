@@ -10,16 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `$ZUB_LOCAL_ROOT` pseudo-variable for `command_roots` entries: the nearest
-  ancestor of the current directory (the current directory included, searching
-  up to `/`) that holds a `.<name>` directory, the way `git` finds `.git`. A
-  project's `.<name>/libexec` now supplies its commands anywhere inside that
-  project instead of only in the one directory containing it.
-- `ZUB_LOCAL_ROOT` is exported to every subcommand when a project root was
-  found, giving scripts the equivalent of `git rev-parse --show-toplevel`. It is
-  explicitly *removed* from the environment when no project root was found, so a
-  subcommand that re-enters `zub` from another directory can't inherit a stale
-  value.
+- `$ZUB_LOCAL_ROOT` pseudo-variable for `command_roots` entries: the local
+  counterpart of `$ZUB_ROOT`, naming the `.<name>` directory that holds a
+  project's own `libexec`/`share`. It is found by walking up from the current
+  directory (the current directory included, searching up to `/`) to the first
+  ancestor that has one, the way `git` finds `.git`. A project's
+  `.<name>/libexec` now supplies its commands anywhere inside that project
+  instead of only in the one directory containing it.
+- `ZUB_LOCAL_ROOT` is exported to every subcommand when the walk found a
+  `.<name>` directory, so scripts can reach project-local data at
+  `$ZUB_LOCAL_ROOT/share`. It is explicitly *removed* from the environment when
+  nothing was found, so a subcommand that re-enters `zub` from another directory
+  can't inherit a stale value.
 
 ### Changed
 
@@ -28,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```yaml
   command_roots:
     - $ZUB_ROOT/libexec
-    - $ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec   # was $PWD/.$ZUB_INSTANCE/libexec
+    - $ZUB_LOCAL_ROOT/libexec   # was $PWD/.$ZUB_INSTANCE/libexec
   ```
 
   A `.<name>/libexec` *above* your current directory now contributes commands

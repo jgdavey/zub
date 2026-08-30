@@ -123,7 +123,7 @@ description: A delicious way to organize programs
 # where subcommands are collected (defaults to the two entries below):
 command_roots:
   - $ZUB_ROOT/libexec
-  - $ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec
+  - $ZUB_LOCAL_ROOT/libexec
 ```
 
 By default subcommands are collected from two directories: `<root>/libexec`
@@ -139,16 +139,21 @@ pseudo-variables:
 | `$ZUB_ROOT` | the program root |
 | `$ZUB_INSTANCE` | the program name |
 | `$PWD` | your current directory, literally |
-| `$ZUB_LOCAL_ROOT` | the current project's root — see below |
+| `$ZUB_LOCAL_ROOT` | the nearest `.<name>` directory — see below |
 
-`$ZUB_LOCAL_ROOT` is found by walking **up** from your current directory (the
-current directory included) to the first ancestor holding a `.<name>`
-directory, the way `git` finds `.git`. So a `.rush/libexec` at the top of a
-project supplies its commands anywhere inside that project, not just in the one
-directory that contains it. The search only looks for `.<name>` itself and stops
-at the first one it finds, so a nearer `.<name>` shadows a further one even if
-it holds no `libexec`. The walk continues to the filesystem root, which means a
-`~/.rush/` acts as a user-level overlay everywhere under your home directory.
+`$ZUB_LOCAL_ROOT` is the local counterpart of `$ZUB_ROOT`: the `.<name>`
+directory that holds your project's own `libexec`/`share`. It's found by walking
+**up** from your current directory (the current directory included) to the first
+ancestor that has one, the way `git` finds `.git`. So a `.rush/libexec` at the
+top of a project supplies its commands anywhere inside that project, not just in
+the one directory that contains it. Because the variable already names the
+`.<name>` directory, you never respell it in a template — `$ZUB_LOCAL_ROOT/libexec`,
+mirroring `$ZUB_ROOT/libexec`.
+
+The search stops at the first `.<name>` it finds, so a nearer one shadows a
+further one even if it holds no `libexec`. The walk continues to the filesystem
+root, which means a `~/.rush/` acts as a user-level overlay everywhere under your
+home directory.
 
 If no `.<name>` is found at all, entries mentioning `$ZUB_LOCAL_ROOT` are simply
 dropped. To get the old exact-match behavior — an overlay that applies *only* in
@@ -339,10 +344,12 @@ the `--help` branch must `exit` so the rest of the script doesn't run.
 > zub exports `ZUB_ROOT`, `ZUB_INSTANCE` (the program name), and `ZUB_CONFIG` to
 > every subcommand, so a script can find its `share/` data or re-invoke the
 > program with `zub <other-command> ...`. When the walk up from your current
-> directory found a project root (the `$ZUB_LOCAL_ROOT` described under
-> `command_roots` above), it is exported as `ZUB_LOCAL_ROOT` too, giving scripts
-> the equivalent of `git rev-parse --show-toplevel`. It is unset when no project
-> root was found.
+> directory found a `.<name>` directory (the `$ZUB_LOCAL_ROOT` described under
+> `command_roots` above), it is exported as `ZUB_LOCAL_ROOT` too, so a script can
+> reach project-local data at `$ZUB_LOCAL_ROOT/share` just as it reaches the
+> program's own at `$ZUB_ROOT/share`. The project directory itself is
+> `$(dirname "$ZUB_LOCAL_ROOT")`. The variable is unset when no `.<name>` was
+> found.
 
 ## Autocompletion
 

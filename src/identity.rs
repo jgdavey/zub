@@ -4,15 +4,14 @@ use std::path::{Path, PathBuf};
 use crate::config::Config;
 
 /// The default command roots when `command_roots` is unset: the program's
-/// `<root>/libexec` (the base layer) overlaid by the per-project
-/// `.<name>/libexec`, discovered by walking up from the current directory.
-const DEFAULT_COMMAND_ROOTS: [&str; 2] = [
-    "$ZUB_ROOT/libexec",
-    "$ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec",
-];
+/// `<root>/libexec` (the base layer) overlaid by the local `.<name>/libexec`,
+/// discovered by walking up from the current directory.
+const DEFAULT_COMMAND_ROOTS: [&str; 2] = ["$ZUB_ROOT/libexec", "$ZUB_LOCAL_ROOT/libexec"];
 
-/// The pseudo-variable naming the discovered local root. A template using it is
-/// working-directory-local, and is dropped entirely when the walk finds nothing.
+/// The pseudo-variable naming the discovered local root — the `.<name>`
+/// directory itself, so the `.<name>` part is never respelled in a template. A
+/// template using it is working-directory-local, and is dropped entirely when
+/// the walk finds nothing.
 const LOCAL_ROOT_VAR: &str = "$ZUB_LOCAL_ROOT";
 
 /// One discovered command-source directory and whether it is working-directory
@@ -104,13 +103,15 @@ fn effective_templates(configured: Option<&[String]>) -> Vec<String> {
 }
 
 /// Walk up from `start` (inclusive) looking for the first directory that
-/// contains `marker` as a directory. `None` when the filesystem root is reached
-/// without a match.
+/// contains `marker` as a directory, and return **that marker directory** — it
+/// is the local counterpart of `root`, holding `libexec`/`share` just as the
+/// program root does. `None` when the filesystem root is reached without a
+/// match.
 fn find_local_root(start: &Path, marker: &str) -> Option<PathBuf> {
     start
         .ancestors()
-        .find(|dir| dir.join(marker).is_dir())
-        .map(Path::to_path_buf)
+        .map(|dir| dir.join(marker))
+        .find(|candidate| candidate.is_dir())
 }
 
 /// Expand the supported pseudo-variables in a command-root template:
@@ -144,9 +145,9 @@ pub struct Identity {
     /// Directories to collect commands from, lowest-precedence first (a later
     /// root overrides an earlier one on a name collision).
     pub command_roots: Vec<CommandRoot>,
-    /// The nearest ancestor of the current directory (inclusive) holding a
-    /// `.<name>` directory, when any template asked for it and the walk found
-    /// one. Exported to subcommands as `ZUB_LOCAL_ROOT`.
+    /// The `.<name>` directory of the nearest ancestor of the current directory
+    /// (inclusive) that has one, when any template asked for it and the walk
+    /// found one. Exported to subcommands as `ZUB_LOCAL_ROOT`.
     pub local_root: Option<PathBuf>,
     pub config_path: PathBuf,
     /// The program's version, from the config's `version` field (for the help
@@ -203,7 +204,7 @@ mod tests {
         fs::create_dir(dir.path().join(".rush")).unwrap();
         assert_eq!(
             find_local_root(dir.path(), ".rush"),
-            Some(dir.path().to_path_buf())
+            Some(dir.path().join(".rush"))
         );
     }
 
@@ -215,7 +216,7 @@ mod tests {
         fs::create_dir_all(&deep).unwrap();
         assert_eq!(
             find_local_root(&deep, ".rush"),
-            Some(dir.path().to_path_buf())
+            Some(dir.path().join(".rush"))
         );
     }
 
@@ -227,7 +228,7 @@ mod tests {
         fs::create_dir_all(nearer.join(".rush")).unwrap();
         let deep = nearer.join("b");
         fs::create_dir(&deep).unwrap();
-        assert_eq!(find_local_root(&deep, ".rush"), Some(nearer));
+        assert_eq!(find_local_root(&deep, ".rush"), Some(nearer.join(".rush")));
     }
 
     #[test]
@@ -283,7 +284,7 @@ mod tests {
                 Path::new("/opt/rush"),
                 "rush",
                 Path::new("/work/a/b"),
-                Some(Path::new("/work")),
+                Some(Path::new("/work/.rush")),
             )
         };
         assert_eq!(
@@ -295,7 +296,7 @@ mod tests {
             Some(PathBuf::from("/work/a/b/.rush/libexec"))
         );
         assert_eq!(
-            expand("$ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec"),
+            expand("$ZUB_LOCAL_ROOT/libexec"),
             Some(PathBuf::from("/work/.rush/libexec"))
         );
     }
@@ -304,7 +305,7 @@ mod tests {
     fn expand_pseudo_vars_drops_local_root_template_when_unresolved() {
         assert_eq!(
             expand_pseudo_vars(
-                "$ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec",
+                "$ZUB_LOCAL_ROOT/libexec",
                 Path::new("/opt/rush"),
                 "rush",
                 Path::new("/work"),
@@ -321,7 +322,7 @@ mod tests {
             Path::new("/opt/rush"),
             "rush",
             Path::new("/work/a/b"),
-            Some(Path::new("/work")),
+            Some(Path::new("/work/.rush")),
         );
         assert_eq!(
             roots,

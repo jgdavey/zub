@@ -18,16 +18,20 @@ throughout a project tree.
 ### The pseudo-variable
 
 Add `$ZUB_LOCAL_ROOT` to the pseudo-variables usable in `command_roots`
-entries. It resolves to the **nearest ancestor of the current directory,
-starting with the current directory itself, that contains a `.<name>`
-directory**, walking up to `/`.
+entries. It is the local counterpart of `$ZUB_ROOT` and resolves to **the
+`.<name>` directory belonging to the nearest ancestor of the current directory,
+starting with the current directory itself, that has one**, walking up to `/`.
 
-The default `command_roots` becomes:
+It names the `.<name>` directory itself rather than that directory's parent, so
+a template never respells `.$ZUB_INSTANCE` — the search is *anchored* on
+`.<name>`, and repeating it in the template would falsely suggest the suffix
+could vary. The default `command_roots` therefore mirrors the program's own
+entry:
 
 ``` yaml
 command_roots:
   - $ZUB_ROOT/libexec
-  - $ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec
+  - $ZUB_LOCAL_ROOT/libexec
 ```
 
 Ordering and precedence are unchanged: the local root is last, so it still
@@ -55,7 +59,7 @@ cwd = /work/a/b
 /work/a/.rush/          (exists, no libexec)
 /work/.rush/libexec/    (has commands)
 
--> $ZUB_LOCAL_ROOT = /work/a
+-> $ZUB_LOCAL_ROOT = /work/a/.rush
 -> /work/a/.rush/libexec does not exist, skipped
 -> no local commands
 ```
@@ -97,11 +101,12 @@ inherit a stale value from the outer invocation.
 ZUB_CONFIG=/opt/rush/zub.yml
 ZUB_ROOT=/opt/rush
 ZUB_INSTANCE=rush
-ZUB_LOCAL_ROOT=/work          # new; absent when no .rush was found
+ZUB_LOCAL_ROOT=/work/.rush    # new; absent when no .rush was found
 ```
 
-This gives subcommands the equivalent of `git rev-parse --show-toplevel`
-without each script re-implementing the walk.
+Subcommands get project-local data at `$ZUB_LOCAL_ROOT/share` exactly as they
+get the program's own at `$ZUB_ROOT/share`, without re-implementing the walk.
+The project directory itself is `$(dirname "$ZUB_LOCAL_ROOT")`.
 
 ## Components
 
@@ -111,8 +116,8 @@ built-ins, and the scaffold templates are unchanged.
 **`identity.rs`**
 
 - `find_local_root(start: &Path, marker: &str) -> Option<PathBuf>` — a walk over
-  `Path::ancestors()` returning the first entry where `join(marker).is_dir()`.
-  Self-contained and testable against tempdirs.
+  `Path::ancestors()` returning the first `ancestor.join(marker)` that is a
+  directory. Self-contained and testable against tempdirs.
 - `command_roots` and `expand_pseudo_vars` take an added
   `local_root: Option<&Path>`; `command_roots` gains the drop-the-entry filter
   and the widened `is_local` test.
