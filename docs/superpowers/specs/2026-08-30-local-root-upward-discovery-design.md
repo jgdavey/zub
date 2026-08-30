@@ -1,6 +1,6 @@
 # Spec: `$ZUB_LOCAL_ROOT` — upward discovery of the per-directory overlay
 
-Status: Draft (design) — no implementation yet.
+Status: Implemented.
 
 ## Goal
 

@@ -429,3 +429,89 @@ fn usage_command_completion_delegates_to_usage_binary() {
         "got: {stdout}"
     );
 }
+
+/// A workspace with `.<name>/libexec/<cmd>` at its top and an empty `a/b`
+/// nested inside it. Returns the temp dir; run `zub` from `<dir>/a/b` to
+/// exercise the upward walk.
+fn workspace(name: &str, cmd: &str, body: &str) -> tempfile::TempDir {
+    let dir = tempdir().unwrap();
+    let libexec = dir.path().join(format!(".{name}")).join("libexec");
+    fs::create_dir_all(&libexec).unwrap();
+    let path = libexec.join(cmd);
+    fs::write(&path, body).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::create_dir_all(dir.path().join("a/b")).unwrap();
+    dir
+}
+
+#[test]
+fn local_command_dispatches_from_a_nested_directory() {
+    let tree = program_tree("rush");
+    let work = workspace("rush", "local-cmd", "#!/bin/sh\necho from-local\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("local-cmd")
+        .current_dir(work.path().join("a/b"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "from-local");
+}
+
+#[test]
+fn subcommand_sees_zub_local_root() {
+    let tree = program_tree("rush");
+    let work = workspace("rush", "where", "#!/bin/sh\necho \"$ZUB_LOCAL_ROOT\"\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("where")
+        .current_dir(work.path().join("a/b"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        Path::new(String::from_utf8_lossy(&out.stdout).trim())
+            .canonicalize()
+            .unwrap(),
+        work.path().canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn zub_local_root_is_unset_when_no_marker_is_found() {
+    let tree = program_tree("rush");
+    write_cmd(
+        tree.path(),
+        "where",
+        "#!/bin/sh\necho \"[${ZUB_LOCAL_ROOT-unset}]\"\n",
+    );
+    // No `.rush` anywhere above this dir, but a stale value in the environment.
+    let elsewhere = tempdir().unwrap();
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("where")
+        .env("ZUB_LOCAL_ROOT", "/stale")
+        .current_dir(elsewhere.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[unset]");
+}

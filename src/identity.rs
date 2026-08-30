@@ -3,13 +3,21 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
-/// The default command roots when `command_roots` is unset, reproducing the
-/// historical local/root behavior: the program's `<root>/libexec` (the base
-/// layer) overlaid by a per-directory `$PWD/.<name>/libexec`.
-const DEFAULT_COMMAND_ROOTS: [&str; 2] = ["$ZUB_ROOT/libexec", "$PWD/.$ZUB_INSTANCE/libexec"];
+/// The default command roots when `command_roots` is unset: the program's
+/// `<root>/libexec` (the base layer) overlaid by the per-project
+/// `.<name>/libexec`, discovered by walking up from the current directory.
+const DEFAULT_COMMAND_ROOTS: [&str; 2] = [
+    "$ZUB_ROOT/libexec",
+    "$ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec",
+];
+
+/// The pseudo-variable naming the discovered local root. A template using it is
+/// working-directory-local, and is dropped entirely when the walk finds nothing.
+const LOCAL_ROOT_VAR: &str = "$ZUB_LOCAL_ROOT";
 
 /// One discovered command-source directory and whether it is working-directory
-/// local (its template referenced `$PWD`; such commands are flagged `(local)`).
+/// local (its template referenced `$PWD` or `$ZUB_LOCAL_ROOT`; such commands
+/// are flagged `(local)`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommandRoot {
     pub path: PathBuf,
@@ -20,8 +28,8 @@ pub struct CommandRoot {
 /// `root` comes from the config's `root` field when set & non-empty, otherwise
 /// from the config file's parent directory. `command_roots` comes from the
 /// config's `command_roots` field (defaulting to [`DEFAULT_COMMAND_ROOTS`]),
-/// with each entry's `$ZUB_ROOT`/`$ZUB_INSTANCE`/`$PWD` pseudo-variables
-/// expanded. The config path is canonicalized.
+/// with each entry's `$ZUB_ROOT`/`$ZUB_INSTANCE`/`$PWD`/`$ZUB_LOCAL_ROOT`
+/// pseudo-variables expanded. The config path is canonicalized.
 pub fn resolve(config_path: &Path, config: &Config) -> Option<Identity> {
     let canon = config_path.canonicalize().ok()?;
     let root = match config.root.as_deref() {
@@ -29,61 +37,104 @@ pub fn resolve(config_path: &Path, config: &Config) -> Option<Identity> {
         _ => canon.parent()?.to_path_buf(),
     };
     let cwd = env::current_dir().unwrap_or_default();
-    let command_roots = command_roots(config.command_roots.as_deref(), &root, &config.name, &cwd);
+    let templates = effective_templates(config.command_roots.as_deref());
+    // Only walk the tree when some template actually asks for the local root.
+    let local_root = templates
+        .iter()
+        .any(|t| t.contains(LOCAL_ROOT_VAR))
+        .then(|| find_local_root(&cwd, &format!(".{}", config.name)))
+        .flatten();
+    let command_roots = command_roots(&templates, &root, &config.name, &cwd, local_root.as_deref());
     Some(Identity {
         name: config.name.clone(),
         root,
         command_roots,
+        local_root,
         config_path: canon,
         version: config.version.clone(),
         description: config.description.clone(),
     })
 }
 
-/// Resolve the configured command-root templates (or the defaults) into
-/// absolute `CommandRoot`s, expanding pseudo-variables. A template is flagged
-/// `is_local` when it references `$PWD`.
+/// Resolve command-root templates into absolute `CommandRoot`s, expanding
+/// pseudo-variables. A template is flagged `is_local` when it references `$PWD`
+/// or `$ZUB_LOCAL_ROOT`; one referencing an unresolved `$ZUB_LOCAL_ROOT` is
+/// dropped.
 fn command_roots(
-    configured: Option<&[String]>,
+    templates: &[String],
     root: &Path,
     name: &str,
     cwd: &Path,
+    local_root: Option<&Path>,
 ) -> Vec<CommandRoot> {
-    let defaults: Vec<String> = DEFAULT_COMMAND_ROOTS
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let templates = match configured {
-        Some(list) if !list.is_empty() => list,
-        _ => &defaults,
-    };
     templates
         .iter()
-        .map(|template| {
-            let expanded = expand_pseudo_vars(template, root, name, cwd);
+        .filter_map(|template| {
+            let expanded = expand_pseudo_vars(template, root, name, cwd, local_root)?;
             // A still-relative entry (e.g. a bare `cmds`) resolves against root.
             let path = if expanded.is_relative() {
                 root.join(expanded)
             } else {
                 expanded
             };
-            CommandRoot {
+            Some(CommandRoot {
                 path,
-                is_local: template.contains("$PWD"),
-            }
+                is_local: is_local(template),
+            })
         })
         .collect()
 }
 
+/// Whether a template is working-directory-local: it is anchored at the current
+/// directory or at the local root discovered by walking up from it.
+fn is_local(template: &str) -> bool {
+    template.contains("$PWD") || template.contains(LOCAL_ROOT_VAR)
+}
+
+/// The command-root templates actually in force: the configured list when
+/// present and non-empty, else [`DEFAULT_COMMAND_ROOTS`].
+fn effective_templates(configured: Option<&[String]>) -> Vec<String> {
+    match configured {
+        Some(list) if !list.is_empty() => list.to_vec(),
+        _ => DEFAULT_COMMAND_ROOTS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    }
+}
+
+/// Walk up from `start` (inclusive) looking for the first directory that
+/// contains `marker` as a directory. `None` when the filesystem root is reached
+/// without a match.
+fn find_local_root(start: &Path, marker: &str) -> Option<PathBuf> {
+    start
+        .ancestors()
+        .find(|dir| dir.join(marker).is_dir())
+        .map(Path::to_path_buf)
+}
+
 /// Expand the supported pseudo-variables in a command-root template:
 /// `$ZUB_ROOT` -> `root`, `$ZUB_INSTANCE` -> the program name, `$PWD` -> the
-/// current working directory.
-fn expand_pseudo_vars(template: &str, root: &Path, name: &str, cwd: &Path) -> PathBuf {
-    let expanded = template
+/// current working directory, `$ZUB_LOCAL_ROOT` -> the discovered local root.
+/// Returns `None` when the template needs a local root that wasn't found, so
+/// the caller drops the entry rather than expanding it against an empty path.
+fn expand_pseudo_vars(
+    template: &str,
+    root: &Path,
+    name: &str,
+    cwd: &Path,
+    local_root: Option<&Path>,
+) -> Option<PathBuf> {
+    let expanded = if template.contains(LOCAL_ROOT_VAR) {
+        template.replace(LOCAL_ROOT_VAR, &local_root?.to_string_lossy())
+    } else {
+        template.to_string()
+    };
+    let expanded = expanded
         .replace("$ZUB_ROOT", &root.to_string_lossy())
         .replace("$ZUB_INSTANCE", name)
         .replace("$PWD", &cwd.to_string_lossy());
-    PathBuf::from(expanded)
+    Some(PathBuf::from(expanded))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +144,10 @@ pub struct Identity {
     /// Directories to collect commands from, lowest-precedence first (a later
     /// root overrides an earlier one on a name collision).
     pub command_roots: Vec<CommandRoot>,
+    /// The nearest ancestor of the current directory (inclusive) holding a
+    /// `.<name>` directory, when any template asked for it and the walk found
+    /// one. Exported to subcommands as `ZUB_LOCAL_ROOT`.
+    pub local_root: Option<PathBuf>,
     pub config_path: PathBuf,
     /// The program's version, from the config's `version` field (for the help
     /// header). `None` when unset.
@@ -130,6 +185,7 @@ pub(crate) fn fixture(name: &str, root: impl AsRef<Path>) -> Identity {
         config_path: root.join("zub.yml"),
         name: name.to_string(),
         root,
+        local_root: None,
         version: None,
         description: None,
     }
@@ -140,6 +196,57 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn find_local_root_finds_marker_in_starting_dir() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join(".rush")).unwrap();
+        assert_eq!(
+            find_local_root(dir.path(), ".rush"),
+            Some(dir.path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn find_local_root_finds_marker_in_ancestor() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join(".rush")).unwrap();
+        let deep = dir.path().join("a/b");
+        fs::create_dir_all(&deep).unwrap();
+        assert_eq!(
+            find_local_root(&deep, ".rush"),
+            Some(dir.path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn find_local_root_prefers_the_nearest_marker() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join(".rush")).unwrap();
+        let nearer = dir.path().join("a");
+        fs::create_dir_all(nearer.join(".rush")).unwrap();
+        let deep = nearer.join("b");
+        fs::create_dir(&deep).unwrap();
+        assert_eq!(find_local_root(&deep, ".rush"), Some(nearer));
+    }
+
+    #[test]
+    fn find_local_root_ignores_a_marker_that_is_a_file() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".rush"), "not a dir").unwrap();
+        assert_eq!(find_local_root(dir.path(), ".rush"), None);
+    }
+
+    #[test]
+    fn find_local_root_returns_none_when_no_marker_exists() {
+        let dir = tempdir().unwrap();
+        let deep = dir.path().join("a/b");
+        fs::create_dir_all(&deep).unwrap();
+        assert_eq!(
+            find_local_root(&deep, ".zub-marker-that-does-not-exist"),
+            None
+        );
+    }
 
     #[test]
     fn resolve_uses_root_field_when_set() {
@@ -163,31 +270,59 @@ mod tests {
         assert_eq!(id.root, dir.path().canonicalize().unwrap());
     }
 
+    /// The defaults, as `command_roots` sees them after template selection.
+    fn defaults() -> Vec<String> {
+        effective_templates(None)
+    }
+
     #[test]
-    fn expand_pseudo_vars_substitutes_all_three() {
-        assert_eq!(
+    fn expand_pseudo_vars_substitutes_all_four() {
+        let expand = |template| {
             expand_pseudo_vars(
-                "$ZUB_ROOT/libexec",
+                template,
                 Path::new("/opt/rush"),
                 "rush",
-                Path::new("/work")
-            ),
-            PathBuf::from("/opt/rush/libexec")
+                Path::new("/work/a/b"),
+                Some(Path::new("/work")),
+            )
+        };
+        assert_eq!(
+            expand("$ZUB_ROOT/libexec"),
+            Some(PathBuf::from("/opt/rush/libexec"))
         );
         assert_eq!(
+            expand("$PWD/.$ZUB_INSTANCE/libexec"),
+            Some(PathBuf::from("/work/a/b/.rush/libexec"))
+        );
+        assert_eq!(
+            expand("$ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec"),
+            Some(PathBuf::from("/work/.rush/libexec"))
+        );
+    }
+
+    #[test]
+    fn expand_pseudo_vars_drops_local_root_template_when_unresolved() {
+        assert_eq!(
             expand_pseudo_vars(
-                "$PWD/.$ZUB_INSTANCE/libexec",
+                "$ZUB_LOCAL_ROOT/.$ZUB_INSTANCE/libexec",
                 Path::new("/opt/rush"),
                 "rush",
-                Path::new("/work")
+                Path::new("/work"),
+                None,
             ),
-            PathBuf::from("/work/.rush/libexec")
+            None
         );
     }
 
     #[test]
     fn command_roots_default_reproduces_root_then_local() {
-        let roots = command_roots(None, Path::new("/opt/rush"), "rush", Path::new("/work"));
+        let roots = command_roots(
+            &defaults(),
+            Path::new("/opt/rush"),
+            "rush",
+            Path::new("/work/a/b"),
+            Some(Path::new("/work")),
+        );
         assert_eq!(
             roots,
             vec![
@@ -204,13 +339,51 @@ mod tests {
     }
 
     #[test]
-    fn command_roots_uses_configured_list() {
-        let configured = vec!["$ZUB_ROOT/libexec".to_string(), "/abs/cmds".to_string()];
+    fn command_roots_drops_local_entry_when_local_root_unresolved() {
         let roots = command_roots(
-            Some(&configured),
+            &defaults(),
             Path::new("/opt/rush"),
             "rush",
             Path::new("/work"),
+            None,
+        );
+        assert_eq!(
+            roots,
+            vec![CommandRoot {
+                path: PathBuf::from("/opt/rush/libexec"),
+                is_local: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn command_roots_keeps_pwd_entries_when_local_root_unresolved() {
+        let configured = vec!["$PWD/.$ZUB_INSTANCE/libexec".to_string()];
+        let roots = command_roots(
+            &configured,
+            Path::new("/opt/rush"),
+            "rush",
+            Path::new("/work/a/b"),
+            None,
+        );
+        assert_eq!(
+            roots,
+            vec![CommandRoot {
+                path: PathBuf::from("/work/a/b/.rush/libexec"),
+                is_local: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn command_roots_uses_configured_list() {
+        let configured = vec!["$ZUB_ROOT/libexec".to_string(), "/abs/cmds".to_string()];
+        let roots = command_roots(
+            &configured,
+            Path::new("/opt/rush"),
+            "rush",
+            Path::new("/work"),
+            None,
         );
         assert_eq!(roots.len(), 2);
         assert_eq!(roots[0].path, PathBuf::from("/opt/rush/libexec"));
@@ -223,23 +396,19 @@ mod tests {
     fn command_roots_relative_entry_resolves_against_root() {
         let configured = vec!["cmds".to_string()];
         let roots = command_roots(
-            Some(&configured),
+            &configured,
             Path::new("/opt/rush"),
             "rush",
             Path::new("/work"),
+            None,
         );
         assert_eq!(roots[0].path, PathBuf::from("/opt/rush/cmds"));
     }
 
     #[test]
-    fn command_roots_empty_list_falls_back_to_default() {
-        let roots = command_roots(
-            Some(&[]),
-            Path::new("/opt/rush"),
-            "rush",
-            Path::new("/work"),
-        );
-        assert_eq!(roots.len(), 2);
+    fn effective_templates_empty_list_falls_back_to_default() {
+        assert_eq!(effective_templates(Some(&[])), defaults());
+        assert_eq!(defaults().len(), 2);
     }
 
     #[test]
@@ -258,6 +427,7 @@ mod tests {
                 },
             ],
             config_path: PathBuf::new(),
+            local_root: None,
             version: None,
             description: None,
         };
