@@ -120,15 +120,16 @@ name: rush
 # optional:
 version: 0.1.0
 description: A delicious way to organize programs
-# where subcommands are collected (defaults to the two entries below):
+# where subcommands are collected (defaults to the three entries below):
 command_roots:
   - $ZUB_ROOT/libexec
+  - $ZUB_USER_ROOT/libexec
   - $ZUB_LOCAL_ROOT/libexec
 ```
 
-By default subcommands are collected from two directories: `<root>/libexec`
-(the program itself) and `.<name>/libexec` in the current project (a
-per-project overlay). Set `command_roots` to change this — it's an **ordered,
+By default subcommands are collected from three directories: `<root>/libexec`
+(the program itself), `~/.local/<name>/libexec` (your own per-user commands),
+and `.<name>/libexec` in the current project (a per-project overlay). Set `command_roots` to change this — it's an **ordered,
 lowest-precedence-first** list, so a command in a later root overrides the same
 name in an earlier one. A bare relative path is resolved against the program
 root, and a nonexistent directory is simply skipped. Each entry may use these
@@ -139,6 +140,7 @@ pseudo-variables:
 | `$ZUB_ROOT` | the program root |
 | `$ZUB_INSTANCE` | the program name |
 | `$PWD` | your current directory, literally |
+| `$ZUB_USER_ROOT` | `$HOME/.local/<name>` |
 | `$ZUB_LOCAL_ROOT` | the nearest `.<name>` directory — see below |
 
 `$ZUB_LOCAL_ROOT` is the local counterpart of `$ZUB_ROOT`: the `.<name>`
@@ -152,8 +154,14 @@ mirroring `$ZUB_ROOT/libexec`.
 
 The search stops at the first `.<name>` it finds, so a nearer one shadows a
 further one even if it holds no `libexec`. The walk continues to the filesystem
-root, which means a `~/.rush/` acts as a user-level overlay everywhere under your
-home directory.
+root, so a `~/.rush/` would also be picked up everywhere under your home
+directory — but for per-user commands prefer `~/.local/rush/libexec`
+(`$ZUB_USER_ROOT`), which applies everywhere and isn't shadowed by a project's
+`.rush`.
+
+`$ZUB_USER_ROOT` sits between the two: a user command overrides the program's
+command of the same name, and a project-local one overrides both. If `$HOME` is
+unset, entries mentioning `$ZUB_USER_ROOT` are dropped.
 
 If no `.<name>` is found at all, entries mentioning `$ZUB_LOCAL_ROOT` are simply
 dropped. To get the old exact-match behavior — an overlay that applies *only* in
@@ -349,7 +357,9 @@ the `--help` branch must `exit` so the rest of the script doesn't run.
 > reach project-local data at `$ZUB_LOCAL_ROOT/share` just as it reaches the
 > program's own at `$ZUB_ROOT/share`. The project directory itself is
 > `$(dirname "$ZUB_LOCAL_ROOT")`. The variable is unset when no `.<name>` was
-> found.
+> found. Likewise `ZUB_USER_ROOT` (`$HOME/.local/<name>`, whether or not it
+> exists) is exported for per-user data at `$ZUB_USER_ROOT/share`; it is unset
+> when `$HOME` is.
 
 ## Autocompletion
 

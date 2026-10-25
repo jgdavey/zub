@@ -515,3 +515,110 @@ fn zub_local_root_is_unset_when_no_marker_is_found() {
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[unset]");
 }
+
+// --- user root (`$HOME/.local/<name>`) ---
+
+/// A fake `$HOME` holding `.local/<name>/libexec/<cmd>`.
+fn user_home(name: &str, cmd: &str, body: &str) -> tempfile::TempDir {
+    let home = tempdir().unwrap();
+    write_cmd_in(home.path(), &format!(".local/{name}/libexec"), cmd, body);
+    home
+}
+
+#[test]
+fn user_command_overrides_program_command() {
+    let tree = program_tree("rush"); // defines `hi`
+    let home = user_home("rush", "hi", "#!/bin/sh\necho from-user\n");
+    let elsewhere = tempdir().unwrap();
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("hi")
+        .env("HOME", home.path())
+        .current_dir(elsewhere.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "from-user");
+}
+
+#[test]
+fn local_command_overrides_user_command() {
+    let tree = program_tree("rush");
+    let home = user_home("rush", "hi", "#!/bin/sh\necho from-user\n");
+    let work = workspace("rush", "hi", "#!/bin/sh\necho from-local\n");
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("hi")
+        .env("HOME", home.path())
+        .current_dir(work.path().join("a/b"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "from-local");
+}
+
+#[test]
+fn subcommand_sees_zub_user_root() {
+    let tree = program_tree("rush");
+    write_cmd(tree.path(), "where", "#!/bin/sh\necho \"$ZUB_USER_ROOT\"\n");
+    // No `.local/rush` under this HOME: the variable is still the path.
+    let home = tempdir().unwrap();
+    let elsewhere = tempdir().unwrap();
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("where")
+        .env("HOME", home.path())
+        .current_dir(elsewhere.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        home.path().join(".local/rush").to_string_lossy()
+    );
+}
+
+#[test]
+fn zub_user_root_is_unset_without_home() {
+    let tree = program_tree("rush");
+    write_cmd(
+        tree.path(),
+        "where",
+        "#!/bin/sh\necho \"[${ZUB_USER_ROOT-unset}]\"\n",
+    );
+    let elsewhere = tempdir().unwrap();
+    let bin = env!("CARGO_BIN_EXE_zub");
+    let out = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .arg("where")
+        .env_remove("HOME")
+        .env("ZUB_USER_ROOT", "/stale")
+        .current_dir(elsewhere.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[unset]");
+}

@@ -6,6 +6,34 @@ the git history and the `v*` tags.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `$ZUB_USER_ROOT` pseudo-variable for `command_roots` entries, naming the
+  per-user root `$HOME/.local/<name>`. It is exported to every subcommand as
+  `ZUB_USER_ROOT` (whether or not the directory exists), so scripts can keep
+  per-user data at `$ZUB_USER_ROOT/share`. When `$HOME` is unset, entries using
+  it are dropped and the variable is removed from the environment.
+
+### Changed
+
+- **The default `command_roots` now includes a per-user layer** between the
+  program and the project:
+
+  ```yaml
+  command_roots:
+    - $ZUB_ROOT/libexec
+    - $ZUB_USER_ROOT/libexec    # new: ~/.local/<name>/libexec
+    - $ZUB_LOCAL_ROOT/libexec
+  ```
+
+  Commands in `~/.local/<name>/libexec` now load everywhere, overriding the
+  program's own commands of the same name; project-local commands still override
+  both. User commands are not marked `(local)`, and `new` still creates commands
+  in `$ZUB_ROOT/libexec`. Programs with an explicit `command_roots` are
+  unaffected.
+
 ## [0.3.0] - 2026-08-30
 
 ### Added
