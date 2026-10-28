@@ -30,13 +30,16 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+      - name: Extract changelog section
+        run: scripts/changelog-notes "$GITHUB_REF_NAME" > notes.md
       - name: Create draft release (once)
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "release $GITHUB_REF_NAME already exists; leaving it as-is"
           else
             gh release create "$GITHUB_REF_NAME" \
-              --draft --generate-notes --title "$GITHUB_REF_NAME"
+              --draft --generate-notes --notes-file notes.md --title "$GITHUB_REF_NAME"
           fi
 
   build:

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Set the GitHub release description of every version in CHANGELOG.md to its
+# changelog section, followed by the "Full Changelog" compare link. Versions
+# without a GitHub release are skipped. Replaces the existing descriptions.
+#
+# Usage: backfill-release-notes [-n]    (-n: print the notes, don't edit releases)
+set -euo pipefail
+
+dir="$(dirname "$0")"
+changelog="$dir/../CHANGELOG.md"
+dry_run=false
+[ "${1:-}" = "-n" ] && dry_run=true
+
+while read -r version; do
+  tag="v$version"
+  if ! gh release view "$tag" </dev/null >/dev/null 2>&1; then
+    echo "skipping $tag: no GitHub release" >&2
+    continue
+  fi
+
+  notes="$("$dir/changelog-notes" "$version" "$changelog")"
+  # The "[x.y.z]: <url>" link reference at the bottom of the changelog.
+  compare="$(sed -nE "s/^\[${version//./\\.}\]: (.*)/\1/p" "$changelog")"
+  [ -n "$compare" ] && notes+=$'\n\n'"**Full Changelog**: $compare"
+
+  if $dry_run; then
+    printf '===== %s =====\n%s\n\n' "$tag" "$notes"
+  else
+    printf '%s\n' "$notes" | gh release edit "$tag" --notes-file -
+    echo "updated $tag"
+  fi
+done < <(sed -nE 's/^## \[([^]]+)\].*/\1/p' "$changelog")
