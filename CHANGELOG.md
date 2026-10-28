@@ -93,3 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A command root is flagged working-directory-local (its commands marked
   `(local)` in listings) when its template references `$PWD` **or**
   `$ZUB_LOCAL_ROOT`.
+
+[0.5.0]: https://github.com/jgdavey/zub/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/jgdavey/zub/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/jgdavey/zub/compare/v0.2.1...v0.3.0
