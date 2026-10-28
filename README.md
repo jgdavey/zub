@@ -452,7 +452,7 @@ in.
 
 zub detects the `#USAGE` block (versus zub's own `#@`) and adapts:
 
-- **Listings** (`rush` and `rush commands`) show the spec's `about` text as the
+- **Listings** (`rush` and `rush help`) show the spec's `about` text as the
   one-line summary — the only field zub reads in-process.
 - **`rush help <command>`** runs the command with `--help` and lets `usage`
   render the whole help screen, so it reads exactly like the standalone script.
