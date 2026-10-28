@@ -10,32 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `eval: true` now works for nested commands (`libexec/db/cd`, run as
-  `<name> db cd`), not just top-level ones. The `init` wrapper matches each
-  argument against the command tree, so only the eval command's full name is
-  eval'd. Previously a nested eval command ran normally, and its last name part
-  (`cd`) was wrongly treated as a top-level eval command. Re-run `init` (or open
-  a new shell) to pick up the new wrapper.
+- `eval: true` now works for nested commands (`libexec/db/cd`, run as `<name> db cd`), not just top-level ones. The `init` wrapper matches each argument against the command tree, so only the eval command's full name is eval'd. Previously a nested eval command ran normally, and its last name part (`cd`) was wrongly treated as a top-level eval command. Re-run `init` (or open a new shell) to pick up the new wrapper.
 
 ### Changed
 
-- `commands` lists nested commands by their full name (`db migrate`) rather than
-  just the last part (`migrate`).
+- `commands` lists nested commands by their full name (`db migrate`) rather than just the last part (`migrate`).
 
 ## [0.4.0] - 2026-10-24
 
 ### Added
 
-- `$ZUB_USER_ROOT` pseudo-variable for `command_roots` entries, naming the
-  per-user root `$HOME/.local/<name>`. It is exported to every subcommand as
-  `ZUB_USER_ROOT` (whether or not the directory exists), so scripts can keep
-  per-user data at `$ZUB_USER_ROOT/share`. When `$HOME` is unset, entries using
-  it are dropped and the variable is removed from the environment.
+- `$ZUB_USER_ROOT` pseudo-variable for `command_roots` entries, naming the per-user root `$HOME/.local/<name>`. It is exported to every subcommand as `ZUB_USER_ROOT` (whether or not the directory exists), so scripts can keep per-user data at `$ZUB_USER_ROOT/share`. When `$HOME` is unset, entries using it are dropped and the variable is removed from the environment.
 
 ### Changed
 
-- **The default `command_roots` now includes a per-user layer** between the
-  program and the project:
+- **The default `command_roots` now includes a per-user layer** between the program and the project:
 
   ```yaml
   command_roots:
@@ -44,28 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - $ZUB_LOCAL_ROOT/libexec
   ```
 
-  Commands in `~/.local/<name>/libexec` now load everywhere, overriding the
-  program's own commands of the same name; project-local commands still override
-  both. User commands are not marked `(local)`, and `new` still creates commands
-  in `$ZUB_ROOT/libexec`. Programs with an explicit `command_roots` are
-  unaffected.
+  Commands in `~/.local/<name>/libexec` now load everywhere, overriding the program's own commands of the same name; project-local commands still override both. User commands are not marked `(local)`, and `new` still creates commands in `$ZUB_ROOT/libexec`. Programs with an explicit `command_roots` are unaffected.
 
 ## [0.3.0] - 2026-08-30
 
 ### Added
 
-- `$ZUB_LOCAL_ROOT` pseudo-variable for `command_roots` entries: the local
-  counterpart of `$ZUB_ROOT`, naming the `.<name>` directory that holds a
-  project's own `libexec`/`share`. It is found by walking up from the current
-  directory (the current directory included, searching up to `/`) to the first
-  ancestor that has one, the way `git` finds `.git`. A project's
-  `.<name>/libexec` now supplies its commands anywhere inside that project
-  instead of only in the one directory containing it.
-- `ZUB_LOCAL_ROOT` is exported to every subcommand when the walk found a
-  `.<name>` directory, so scripts can reach project-local data at
-  `$ZUB_LOCAL_ROOT/share`. It is explicitly *removed* from the environment when
-  nothing was found, so a subcommand that re-enters `zub` from another directory
-  can't inherit a stale value.
+- `$ZUB_LOCAL_ROOT` pseudo-variable for `command_roots` entries: the local counterpart of `$ZUB_ROOT`, naming the `.<name>` directory that holds a project's own `libexec`/`share`. It is found by walking up from the current directory (the current directory included, searching up to `/`) to the first ancestor that has one, the way `git` finds `.git`. A project's `.<name>/libexec` now supplies its commands anywhere inside that project instead of only in the one directory containing it.
+- `ZUB_LOCAL_ROOT` is exported to every subcommand when the walk found a `.<name>` directory, so scripts can reach project-local data at `$ZUB_LOCAL_ROOT/share`. It is explicitly *removed* from the environment when nothing was found, so a subcommand that re-enters `zub` from another directory can't inherit a stale value.
 
 ### Changed
 
@@ -77,22 +52,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - $ZUB_LOCAL_ROOT/libexec   # was $PWD/.$ZUB_INSTANCE/libexec
   ```
 
-  A `.<name>/libexec` *above* your current directory now contributes commands
-  where it previously did not. Programs that want the old exact-match behavior
-  should set `command_roots` explicitly with `$PWD/.$ZUB_INSTANCE/libexec`;
-  `$PWD` keeps its literal meaning.
+  A `.<name>/libexec` *above* your current directory now contributes commands where it previously did not. Programs that want the old exact-match behavior should set `command_roots` explicitly with `$PWD/.$ZUB_INSTANCE/libexec`; `$PWD` keeps its literal meaning.
 
   Two consequences worth knowing:
 
-  - The search looks only for `.<name>` itself and stops at the first one it
-    finds, so a nearer `.<name>/` shadows a further one even when it holds no
-    `libexec` — in that case no local commands load.
-  - The walk continues to the filesystem root, so a `~/.<name>/` acts as a
-    user-level overlay everywhere under your home directory.
+  - The search looks only for `.<name>` itself and stops at the first one it finds, so a nearer `.<name>/` shadows a further one even when it holds no `libexec` — in that case no local commands load.
+  - The walk continues to the filesystem root, so a `~/.<name>/` acts as a user-level overlay everywhere under your home directory.
 
-- A command root is flagged working-directory-local (its commands marked
-  `(local)` in listings) when its template references `$PWD` **or**
-  `$ZUB_LOCAL_ROOT`.
+- A command root is flagged working-directory-local (its commands marked `(local)` in listings) when its template references `$PWD` **or** `$ZUB_LOCAL_ROOT`.
 
 [0.5.0]: https://github.com/jgdavey/zub/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jgdavey/zub/compare/v0.3.0...v0.4.0
