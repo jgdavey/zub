@@ -622,3 +622,45 @@ fn zub_user_root_is_unset_without_home() {
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[unset]");
 }
+
+// --- init's eval wrapper ---
+
+#[test]
+fn init_wrapper_evals_nested_eval_command_in_bash() {
+    let tree = program_tree("rush");
+    let eval = |var: &str| format!("#!/bin/sh\n#@ eval: true\necho \"export {var}=\\\"$*\\\"\"\n");
+    write_cmd(tree.path(), "top", &eval("TOP"));
+    write_cmd(tree.path(), "db/cd", &eval("NESTED"));
+    write_cmd(tree.path(), "db/x/y", &eval("DEEP"));
+    let bin = Path::new(env!("CARGO_BIN_EXE_zub"));
+    let init = Command::new(bin)
+        .arg("-C")
+        .arg(config_path(tree.path()))
+        .args(["init", "-", "bash"])
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+    fs::write(tree.path().join("init.sh"), &init.stdout).unwrap();
+
+    // The wrapper calls `zub` from PATH; `cd` alone is not an eval command.
+    let path = format!(
+        "{}:{}",
+        bin.parent().unwrap().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let script = "shopt -s expand_aliases\n\
+                  source ./init.sh 2>/dev/null\n\
+                  rush top a\n\
+                  rush db cd b c\n\
+                  rush db x y d\n\
+                  rush cd 2>/dev/null\n\
+                  echo \"$TOP|$NESTED|$DEEP|$?\"\n";
+    let out = Command::new("bash")
+        .current_dir(tree.path())
+        .env("PATH", path)
+        .env_remove("ZUB_CONFIG")
+        .args(["-c", script])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "a|b c|d|127");
+}

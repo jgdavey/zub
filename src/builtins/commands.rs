@@ -3,6 +3,7 @@ use crate::builtins::BUILTINS;
 use std::collections::BTreeSet;
 
 /// Build the command-name list honoring the `--eval` / `--no-eval` filters.
+/// Nested commands are listed by their full, space-joined name (`db migrate`).
 /// An eval command is an external whose front-matter sets `eval: true`; its
 /// stdout is meant to be `eval`'d by the shell. Built-ins are never eval.
 pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
@@ -21,7 +22,7 @@ pub fn collect(args: &[String], ctx: &Context) -> Vec<String> {
             _ => true,
         };
         if keep {
-            out.insert(c.name());
+            out.insert(c.full_name());
         }
     }
     out.into_iter().collect()
@@ -107,5 +108,19 @@ mod tests {
         let out = collect(&["--no-eval".to_string()], &ctx);
         assert!(out.contains(&"who".to_string()));
         assert!(!out.contains(&"cd".to_string()));
+    }
+
+    #[test]
+    fn nested_commands_listed_by_full_name() {
+        let (id, cmds) = ctx_with_eval(&[("db migrate", false), ("db cd", true)]);
+        let ctx = Context {
+            identity: &id,
+            index: &cmds,
+        };
+        assert!(collect(&[], &ctx).contains(&"db migrate".to_string()));
+        assert_eq!(
+            collect(&["--eval".to_string()], &ctx),
+            vec!["db cd".to_string()]
+        );
     }
 }

@@ -43,7 +43,7 @@ Subcommands self-document via a contiguous run of comment lines beginning with a
 
 ### eval commands
 
-A command whose front-matter sets `eval: true` is a shell-eval command (its stdout is meant to be `eval`'d by the shell, enabling `cd`-like effects). There is no name munging — one command is one file, named normally. The `commands` built-in filters these with `--eval`/`--no-eval` (built-ins are never eval), and the `init` script's wrapper `eval`s their stdout (`eval $(zub -C <config> "$command")`) instead of running them normally. `new --eval` scaffolds a single file carrying `eval: true`. See `builtins/commands.rs`, `builtins/new.rs`, and `builtins/init.rs`.
+A command whose front-matter sets `eval: true` is a shell-eval command (its stdout is meant to be `eval`'d by the shell, enabling `cd`-like effects). There is no name munging — one command is one file, named normally. Eval commands may be nested at any depth. The `commands` built-in lists commands by full name (`db cd`) and filters eval ones with `--eval`/`--no-eval` (built-ins are never eval). The `init` script's wrapper is a nested `case` (one level per name part, built from the index by `init::eval_commands`, skipping any a built-in shadows): it `eval`s the stdout of an eval command (`eval "$(zub -C <config> "$@")"`) and runs anything else normally. `new --eval` scaffolds a single file carrying `eval: true`. See `builtins/commands.rs`, `builtins/new.rs`, and `builtins/init.rs`.
 
 ## Conventions
 

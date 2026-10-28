@@ -6,6 +6,22 @@ the git history and the `v*` tags.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `eval: true` now works for nested commands (`libexec/db/cd`, run as
+  `<name> db cd`), not just top-level ones. The `init` wrapper matches each
+  argument against the command tree, so only the eval command's full name is
+  eval'd. Previously a nested eval command ran normally, and its last name part
+  (`cd`) was wrongly treated as a top-level eval command. Re-run `init` (or open
+  a new shell) to pick up the new wrapper.
+
+### Changed
+
+- `commands` lists nested commands by their full name (`db migrate`) rather than
+  just the last part (`migrate`).
+
 ## [0.4.0] - 2026-10-24
 
 ### Added
